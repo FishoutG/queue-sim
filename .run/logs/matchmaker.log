@@ -1,0 +1,12 @@
+
+> dev:matchmaker
+> ts-node-dev --respawn --transpile-only src/matchmaker/worker.ts
+
+[INFO] 03:26:55 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 04:39:14 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 04:40:09 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 04:40:21 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
