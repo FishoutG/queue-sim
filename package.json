@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "dev:gateway": "ts-node-dev --respawn --transpile-only src/gateway/server.ts",
     "dev:matchmaker": "ts-node-dev --respawn --transpile-only src/matchmaker/worker.ts",
