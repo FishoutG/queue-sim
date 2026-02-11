@@ -15,3 +15,7 @@ Error: listen EADDRINUSE: address already in use :::3000
     at Module._extensions..js (node:internal/modules/cjs/loader:1414:10)
     at require.extensions..jsx.require.extensions..js (/tmp/ts-node-dev-hook-9731938622669063.js:114:20)
 [ERROR] 03:26:56 Error: listen EADDRINUSE: address already in use :::3000
+[INFO] 04:43:04 Reinitializing TS compilation
+[INFO] 04:43:04 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modified
+Gateway listening on ws://0.0.0.0:3000
+Redis at 127.0.0.1:6379

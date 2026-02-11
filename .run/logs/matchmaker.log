@@ -10,3 +10,6 @@ Matchmaker starting. Redis at 127.0.0.1:6379
 Matchmaker starting. Redis at 127.0.0.1:6379
 [INFO] 04:40:21 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
 Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 04:43:04 Reinitializing TS compilation
+[INFO] 04:43:05 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
