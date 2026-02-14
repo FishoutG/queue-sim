@@ -11,16 +11,20 @@ const MAX_PULL = 400; // how many queue entries we are willing to inspect to fin
 const SLEEP_MS_IDLE = 250;
 const SLEEP_MS_NO_SESSION = 500;
 
+// Shared Redis client for queues and state.
 const redis = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
 
+// Simple async delay helper.
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Clamp a value to a range.
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+// Choose a randomized match duration with a triangular distribution.
 function pickMatchDurationMs(): number {
   const minSec = Math.min(MATCH_MIN_SECONDS, MATCH_MAX_SECONDS);
   const maxSec = Math.max(MATCH_MIN_SECONDS, MATCH_MAX_SECONDS);
@@ -36,7 +40,7 @@ function pickMatchDurationMs(): number {
 }
 
 async function reserveIdleSession(): Promise<string | null> {
-  // Take one idle session ID (1 session = 1 match)
+  // Take one idle session ID (1 session = 1 match).
   const sessionId = await redis.spop("sessions:idle");
   if (!sessionId) return null;
 
@@ -49,6 +53,7 @@ async function reserveIdleSession(): Promise<string | null> {
 }
 
 async function releaseSessionBackToIdle(sessionId: string) {
+  // Return the session to the idle pool after a failed match attempt.
   await redis.hset(`session:${sessionId}`, {
     state: "IDLE",
     game_id: "",
@@ -59,14 +64,16 @@ async function releaseSessionBackToIdle(sessionId: string) {
 
 async function pickReadyPlayers(): Promise<string[]> {
   const picked: string[] = [];
+  const toReturn: string[] = []; // READY players we popped but won't use
   let inspected = 0;
 
   while (picked.length < BATCH_SIZE && inspected < MAX_PULL) {
     const need = BATCH_SIZE - picked.length;
-    const toPull = Math.min(need * 2, MAX_PULL - inspected); // pull more to compensate for stale entries
+    // Pull more to compensate for stale entries in the queue.
+    const toPull = Math.min(need * 2, MAX_PULL - inspected);
     if (toPull <= 0) break;
 
-    // Pop some candidate IDs from the queue
+    // Pop candidate IDs from the queue.
     const candidates: string[] = [];
     for (let i = 0; i < toPull; i++) {
       const id = await redis.lpop("queue:ready");
@@ -77,7 +84,7 @@ async function pickReadyPlayers(): Promise<string[]> {
     if (candidates.length === 0) break;
     inspected += candidates.length;
 
-    // Check which are still READY (lazy cleanup)
+    // Check which are still READY (lazy cleanup).
     const pipe = redis.pipeline();
     for (const id of candidates) pipe.hget(`player:${id}`, "state");
     const states = await pipe.exec();
@@ -87,14 +94,23 @@ async function pickReadyPlayers(): Promise<string[]> {
       const state = states?.[i]?.[1] as string | null;
 
       if (state === "READY") {
-        picked.push(playerId);
-        if (picked.length >= BATCH_SIZE) break;
+        if (picked.length < BATCH_SIZE) {
+          picked.push(playerId);
+        } else {
+          // Already have enough, save to return to queue
+          toReturn.push(playerId);
+        }
       }
-      // else: stale entry — ignore (player UNREADY/disconnected/etc)
+      // else: stale entry - ignore (player UNREADY/disconnected/etc).
     }
   }
 
-  // If we didn’t get enough, put the valid ones back so we don’t “lose” them
+  // Put back any READY players we didn't pick
+  if (toReturn.length > 0) {
+    await redis.rpush("queue:ready", ...toReturn);
+  }
+
+  // If we didn't get enough, put the valid ones back so we don't lose them.
   if (picked.length > 0 && picked.length < BATCH_SIZE) {
     await redis.rpush("queue:ready", ...picked);
     return [];
@@ -103,13 +119,14 @@ async function pickReadyPlayers(): Promise<string[]> {
   return picked;
 }
 
+
 async function createMatch(sessionId: string, playerIds: string[]) {
   const gameId = randomUUID();
   const now = Date.now();
   const durationMs = pickMatchDurationMs();
   const endAt = now + durationMs;
 
-  // Create game records + move players to IN_GAME
+  // Create game records + move players to IN_GAME.
   const pipe = redis.pipeline();
 
   pipe.hset(`game:${gameId}`, {
@@ -129,7 +146,7 @@ async function createMatch(sessionId: string, playerIds: string[]) {
     });
   }
 
-  // Mark session busy (1 session = 1 match)
+  // Mark session busy (1 session = 1 match).
   pipe.hset(`session:${sessionId}`, {
     state: "BUSY",
     game_id: gameId,
@@ -138,7 +155,7 @@ async function createMatch(sessionId: string, playerIds: string[]) {
 
   await pipe.exec();
 
-  // Publish event so Gateway can notify connected sockets
+  // Publish event so Gateway can notify connected sockets.
   await redis.publish(
     "events:match_found",
     JSON.stringify({ gameId, sessionId, playerIds })
@@ -151,42 +168,79 @@ async function createMatch(sessionId: string, playerIds: string[]) {
   );
 }
 
+// Distributed lock to prevent multiple matchmakers from racing
+const MATCHMAKER_LOCK_KEY = "lock:matchmaker";
+const MATCHMAKER_LOCK_TTL_MS = 5000;
+
+async function acquireMatchmakerLock(): Promise<boolean> {
+  const result = await redis.set(MATCHMAKER_LOCK_KEY, process.pid.toString(), "PX", MATCHMAKER_LOCK_TTL_MS, "NX");
+  return result === "OK";
+}
+
+async function releaseMatchmakerLock(): Promise<void> {
+  await redis.del(MATCHMAKER_LOCK_KEY);
+}
+
 async function main() {
   console.log(`Matchmaker starting. Redis at ${REDIS_HOST}:${REDIS_PORT}`);
 
   while (true) {
-    const readyLen = await redis.llen("queue:ready");
-    if (readyLen < BATCH_SIZE) {
+    // Acquire lock before processing to prevent race with other matchmakers
+    if (!await acquireMatchmakerLock()) {
       await sleep(SLEEP_MS_IDLE);
       continue;
     }
 
-    const sessionId = await reserveIdleSession();
-    if (!sessionId) {
-      // No capacity — wait (autoscaler later)
-      await sleep(SLEEP_MS_NO_SESSION);
-      continue;
-    }
-
     try {
-      const players = await pickReadyPlayers();
-      if (players.length !== BATCH_SIZE) {
-        // Not enough valid READY players after cleanup
-        await releaseSessionBackToIdle(sessionId);
+      const readyLen = await redis.llen("queue:ready");
+      if (readyLen < BATCH_SIZE) {
         await sleep(SLEEP_MS_IDLE);
         continue;
       }
 
-      await createMatch(sessionId, players);
-    } catch (e) {
-      console.error("Matchmaker error:", e);
-      // Avoid leaking reserved sessions
-      await releaseSessionBackToIdle(sessionId);
-      await sleep(250);
+      const idleSessions = await redis.scard("sessions:idle");
+      const targetMatches = Math.min(Math.floor(readyLen / BATCH_SIZE), idleSessions);
+
+      if (targetMatches <= 0) {
+        await sleep(SLEEP_MS_NO_SESSION);
+        continue;
+      }
+
+      let createdAny = false;
+
+      for (let i = 0; i < targetMatches; i++) {
+        const sessionId = await reserveIdleSession();
+        if (!sessionId) break;
+
+        try {
+          const players = await pickReadyPlayers();
+          if (players.length !== BATCH_SIZE) {
+            // Not enough valid READY players after cleanup.
+            await releaseSessionBackToIdle(sessionId);
+            break;
+          }
+
+          await createMatch(sessionId, players);
+          createdAny = true;
+        } catch (e) {
+          console.error("Matchmaker error:", e);
+          // Avoid leaking reserved sessions.
+          await releaseSessionBackToIdle(sessionId);
+          await sleep(250);
+          break;
+        }
+      }
+
+      if (!createdAny) {
+        await sleep(SLEEP_MS_IDLE);
+      }
+    } finally {
+      await releaseMatchmakerLock();
     }
   }
 }
 
+// Exit on unexpected errors.
 main().catch((e) => {
   console.error(e);
   process.exit(1);

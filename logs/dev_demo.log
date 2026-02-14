@@ -1,0 +1,160 @@
+Demo log: /home/jdale/queue-sim/queue-sim/logs/dev_demo.log
+Registering idle sessions...
+[INFO] 02:55:28 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Registered 40 sessions. Idle now: 41
+Starting gateway on port 3001...
+Starting matchmaker (5-10s matches)...
+Starting session runner...
+Starting stale-player reaper...
+[INFO] 02:55:30 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 02:55:30 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 02:55:30 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 02:55:30 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Matchmaker starting. Redis at 127.0.0.1:6379
+Reaper starting. Redis at 127.0.0.1:6379
+Session runner starting: session=923bfbb5-ef6d-44a7-bc68-87c8fe20cf97 Redis=127.0.0.1:6379
+Registered new session as IDLE: 923bfbb5-ef6d-44a7-bc68-87c8fe20cf97
+Gateway listening on ws://0.0.0.0:3001
+Redis at 127.0.0.1:6379
+Starting observer + player spawner...
+[INFO] 02:55:32 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 02:55:33 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Connected to ws://127.0.0.1:3001
+Sent READY_UP
+Server message: { type: 'WELCOME', playerId: '1a409604-a6ef-481f-a1cb-ac1bd79de332' }
+Server message: { type: 'STATE', state: 'IN_LOBBY' }
+Server message: { type: 'STATE', state: 'READY' }
+Opened 25/1000
+Opened 50/1000
+Opened 75/1000
+Opened 100/1000
+Opened 125/1000
+Opened 150/1000
+Opened 175/1000
+Opened 200/1000
+Opened 225/1000
+Opened 250/1000
+Opened 275/1000
+Opened 300/1000
+Opened 325/1000
+Opened 350/1000
+Opened 375/1000
+Opened 400/1000
+Opened 425/1000
+Opened 450/1000
+Opened 475/1000
+Opened 500/1000
+Opened 525/1000
+Opened 550/1000
+Opened 575/1000
+Opened 600/1000
+Opened 625/1000
+Opened 650/1000
+Opened 675/1000
+Opened 700/1000
+Opened 725/1000
+Opened 750/1000
+Opened 775/1000
+Opened 800/1000
+MATCH_FOUND game=0e333729-2eaf-4104-b76a-4a3755af8be4 session=f21273ba-0edc-4cfb-bb60-3dd7221c2f2f players=100 endAt=2026-02-14T02:55:42.273Z
+Server message: {
+  type: 'MATCH_FOUND',
+  gameId: '0e333729-2eaf-4104-b76a-4a3755af8be4',
+  sessionId: 'f21273ba-0edc-4cfb-bb60-3dd7221c2f2f'
+}
+Server message: { type: 'STATE', state: 'IN_GAME' }
+Opened 825/1000
+Opened 850/1000
+Opened 875/1000
+Opened 900/1000
+Opened 925/1000
+Opened 950/1000
+Opened 975/1000
+MATCH_FOUND game=c3116510-4e14-43ec-b859-2113b3cd6b7a session=219b9fb8-fb37-4049-9edd-e9e0828d938f players=100 endAt=2026-02-14T02:55:42.146Z
+Opened 1000/1000
+Server message: {
+  type: 'MATCH_ENDED',
+  gameId: '0e333729-2eaf-4104-b76a-4a3755af8be4',
+  sessionId: 'f21273ba-0edc-4cfb-bb60-3dd7221c2f2f'
+}
+Server message: { type: 'STATE', state: 'IN_LOBBY' }
+Demo log: /home/jdale/queue-sim/queue-sim/logs/dev_demo.log
+Registering idle sessions...
+[INFO] 03:06:03 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Registered 40 sessions. Idle now: 40
+Starting gateway on port 3001...
+Starting matchmaker (5-10s matches)...
+Starting session runner...
+Starting stale-player reaper...
+[INFO] 03:06:05 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 03:06:05 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 03:06:05 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 03:06:05 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Session runner starting: session=77496be0-1f12-467d-a8cc-30f09484936f Redis=127.0.0.1:6379
+Registered new session as IDLE: 77496be0-1f12-467d-a8cc-30f09484936f
+Reaper starting. Redis at 127.0.0.1:6379
+Gateway listening on ws://0.0.0.0:3001
+Redis at 127.0.0.1:6379
+Starting observer + player spawner...
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 03:06:06 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 03:06:06 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Connected to ws://127.0.0.1:3001
+Sent READY_UP
+Server message: { type: 'STATE', state: 'READY' }
+Server message: { type: 'WELCOME', playerId: '6efe1c9b-1484-4fec-95aa-9cc6845ae898' }
+Server message: { type: 'STATE', state: 'IN_LOBBY' }
+Opened 25/1000
+Opened 50/1000
+Opened 75/1000
+Opened 100/1000
+Opened 125/1000
+Opened 150/1000
+Opened 175/1000
+Opened 200/1000
+Opened 225/1000
+Opened 250/1000
+Opened 275/1000
+Opened 300/1000
+Opened 325/1000
+Opened 350/1000
+Opened 375/1000
+Opened 400/1000
+Opened 425/1000
+Opened 450/1000
+Opened 475/1000
+Opened 500/1000
+Opened 525/1000
+Opened 550/1000
+Opened 575/1000
+Opened 600/1000
+Opened 625/1000
+Opened 650/1000
+Opened 675/1000
+Opened 700/1000
+Opened 725/1000
+Opened 750/1000
+Opened 775/1000
+Opened 800/1000
+Opened 825/1000
+MATCH_FOUND game=90d1cc22-c7d8-4a6f-9770-0b39e5fb7e3e session=ce6b1062-36d6-47be-ad74-03691a5c787e players=100 endAt=2026-02-14T03:06:16.012Z
+Server message: {
+  type: 'MATCH_FOUND',
+  gameId: 'ca02df6f-1910-4b0f-b0f2-ca211c59e719',
+  sessionId: 'a462f952-c36f-4b3b-94ea-a3b82e8a20fa'
+}
+Server message: { type: 'STATE', state: 'IN_GAME' }
+MATCH_FOUND game=21f491e4-bb42-4eb4-9a01-0043bcedc9c2 session=272e0513-cd54-4273-b539-ca494c41e890 players=100 endAt=2026-02-14T03:06:15.730Z
+Opened 850/1000
+Opened 875/1000
+Opened 900/1000
+Opened 925/1000
+Opened 950/1000
+Opened 975/1000
+Opened 1000/1000
+Server message: {
+  type: 'MATCH_ENDED',
+  gameId: 'ca02df6f-1910-4b0f-b0f2-ca211c59e719',
+  sessionId: 'a462f952-c36f-4b3b-94ea-a3b82e8a20fa'
+}
+Server message: { type: 'STATE', state: 'IN_LOBBY' }

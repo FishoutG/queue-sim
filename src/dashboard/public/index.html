@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queue-Sim Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🎮 Queue-Sim Dashboard</h1>
+    <div id="connection-status" class="status disconnected">Disconnected</div>
+  </header>
+
+  <main>
+    <!-- Controls -->
+    <section id="controls-section">
+      <div class="controls-panel">
+        <div class="control-group">
+          <label>Spawn Players:</label>
+          <input type="number" id="spawn-count" value="100" min="1" max="500">
+          <button id="spawn-btn" class="btn btn-primary">Spawn</button>
+          <button id="spawn-ready-btn" class="btn btn-success">Spawn & Ready</button>
+        </div>
+        <div class="control-group">
+          <button id="ready-all-btn" class="btn btn-warning">Ready All Lobby</button>
+          <button id="clear-players-btn" class="btn btn-danger">Clear All Players</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Cards -->
+    <section id="stats-section">
+      <div class="card stat-card">
+        <h3>Players</h3>
+        <div class="stat-value" id="stat-players-total">-</div>
+        <div class="stat-breakdown">
+          <span class="badge badge-lobby">Lobby: <span id="stat-players-lobby">-</span></span>
+          <span class="badge badge-ready">Ready: <span id="stat-players-ready">-</span></span>
+          <span class="badge badge-ingame">In-Game: <span id="stat-players-ingame">-</span></span>
+        </div>
+      </div>
+
+      <div class="card stat-card">
+        <h3>Games</h3>
+        <div class="stat-value" id="stat-games-running">-</div>
+        <div class="stat-label">Running</div>
+        <div class="stat-breakdown">
+          <span class="badge badge-finished">Finished: <span id="stat-games-finished">-</span></span>
+        </div>
+      </div>
+
+      <div class="card stat-card">
+        <h3>Sessions</h3>
+        <div class="stat-value" id="stat-sessions-total">-</div>
+        <div class="stat-breakdown">
+          <span class="badge badge-idle">Idle: <span id="stat-sessions-idle">-</span></span>
+          <span class="badge badge-busy">Busy: <span id="stat-sessions-busy">-</span></span>
+        </div>
+      </div>
+
+      <div class="card stat-card">
+        <h3>Queue</h3>
+        <div class="stat-value" id="stat-queue-ready">-</div>
+        <div class="stat-label">Ready to Match</div>
+      </div>
+    </section>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="games">Games</button>
+      <button class="tab" data-tab="players">Players</button>
+      <button class="tab" data-tab="sessions">Sessions</button>
+      <button class="tab" data-tab="infra">Infrastructure</button>
+    </nav>
+
+    <!-- Games Panel -->
+    <section id="games-panel" class="panel active">
+      <div class="panel-header">
+        <h2>Active Games</h2>
+        <div class="filters">
+          <select id="games-filter">
+            <option value="">All States</option>
+            <option value="RUNNING" selected>Running</option>
+            <option value="FINISHED">Finished</option>
+          </select>
+          <button id="games-refresh" class="btn-refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Game ID</th>
+            <th>Session</th>
+            <th>State</th>
+            <th>Players</th>
+            <th>Time Left</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody id="games-table-body">
+          <tr><td colspan="6" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Players Panel -->
+    <section id="players-panel" class="panel">
+      <div class="panel-header">
+        <h2>Players</h2>
+        <div class="filters">
+          <select id="players-filter">
+            <option value="">All States</option>
+            <option value="IN_LOBBY">In Lobby</option>
+            <option value="READY">Ready</option>
+            <option value="IN_GAME">In Game</option>
+          </select>
+          <button id="players-refresh" class="btn-refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Player ID</th>
+            <th>State</th>
+            <th>Game</th>
+            <th>Session</th>
+            <th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody id="players-table-body">
+          <tr><td colspan="5" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Sessions Panel -->
+    <section id="sessions-panel" class="panel">
+      <div class="panel-header">
+        <h2>Sessions</h2>
+        <div class="filters">
+          <select id="sessions-filter">
+            <option value="">All States</option>
+            <option value="IDLE">Idle</option>
+            <option value="BUSY">Busy</option>
+          </select>
+          <button id="sessions-refresh" class="btn-refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Session ID</th>
+            <th>State</th>
+            <th>Game</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-table-body">
+          <tr><td colspan="4" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Infrastructure Panel -->
+    <section id="infra-panel" class="panel">
+      <div class="panel-header">
+        <h2>Infrastructure</h2>
+      </div>
+      <div id="infra-disabled" class="placeholder-message" style="display: none;">
+        <p>🔧 Proxmox integration not configured</p>
+        <p class="hint">Configure PROXMOX_HOST, PROXMOX_USER, and PROXMOX_TOKEN to enable</p>
+      </div>
+      <div id="infra-content" style="display: none;">
+        <h3>Nodes</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Status</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>Uptime</th>
+            </tr>
+          </thead>
+          <tbody id="nodes-table-body">
+            <tr><td colspan="5" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <h3>Virtual Machines</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>VMID</th>
+              <th>Name</th>
+              <th>Node</th>
+              <th>Status</th>
+              <th>CPU</th>
+              <th>Memory</th>
+            </tr>
+          </thead>
+          <tbody id="vms-table-body">
+            <tr><td colspan="6" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <h3>Containers (LXC)</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>VMID</th>
+              <th>Name</th>
+              <th>Node</th>
+              <th>Status</th>
+              <th>CPU</th>
+              <th>Memory</th>
+            </tr>
+          </thead>
+          <tbody id="containers-table-body">
+            <tr><td colspan="6" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Event Log -->
+    <section id="event-log">
+      <h3>Recent Events</h3>
+      <div id="events-container"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Queue-Sim Dashboard</span>
+    <span id="last-update">Last update: -</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

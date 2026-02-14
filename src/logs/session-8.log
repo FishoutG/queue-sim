@@ -34,23 +34,22 @@ Session already exists in Redis: sess-8
 [INFO] 04:43:04 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modified
 Session runner starting: session=sess-8 Redis=127.0.0.1:6379
 Session already exists in Redis: sess-8
-ing game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=88857
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=83848
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=78839
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=73833
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=68824
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=63815
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=58809
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=53806
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=48798
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=43790
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=38781
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=33777
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=28769
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=23764
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=18755
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=13747
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=8738
+[INFO] 01:34:18 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:35:55 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:52:14 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:52:21 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+MATCH_ENDED game=1a42ef77-9b5e-435e-984b-f7a32f89f35e session=021554fb-d3de-4b70-8a7d-cd71419cc3db players=100
+MATCH_ENDED game=4ab3a9c5-2344-453e-86c6-fbb4aa5334ad session=3a0a0df0-d04b-4716-958d-5d0828d11512 players=100
+MATCH_ENDED game=fc756078-d66e-4ceb-9190-31576fa4eda6 session=9b2c02e3-446e-4dde-98a9-1137bb384698 players=100
+-17bb-40a2-b442-6dff009e0b46 endsInMs=8738
 Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=3728
 MATCH_ENDED game=65262449-17bb-40a2-b442-6dff009e0b46 session=sess-8 players=100
 [INFO] 04:39:55 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
@@ -60,24 +59,22 @@ Session already exists in Redis: sess-8
 [INFO] 04:43:05 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modified
 Session runner starting: session=sess-8 Redis=127.0.0.1:6379
 Session already exists in Redis: sess-8
-880
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=98871
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=93863
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=88856
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=83848
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=78844
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=73835
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=68828
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=63818
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=58810
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=53801
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=48793
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=43785
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=38780
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=33777
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=28771
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=23763
-Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=18755
+[INFO] 01:34:18 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:35:55 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:52:14 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+[INFO] 01:52:21 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+MATCH_ENDED game=214ac8f8-e289-4d6d-a64c-b271856ee263 session=7ee82fa7-f555-470e-88aa-4ee91d5d6f5d players=100
+MATCH_ENDED game=268b3a6c-744c-4b13-bbe1-a9f472e03de7 session=6e5f0960-1904-490a-9112-d4d1de19e333 players=100
+MATCH_ENDED game=bf5c1806-fb17-4b6d-b75e-32301222c8ff session=8c9b7578-306f-4dd7-9a59-e0940e4e24d7 players=100
+game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=18755
 Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=13744
 Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=8736
 Game running game=65262449-17bb-40a2-b442-6dff009e0b46 endsInMs=3727
@@ -87,4 +84,12 @@ Session runner starting: session=sess-8 Redis=127.0.0.1:6379
 Session already exists in Redis: sess-8
 [INFO] 04:43:04 Reinitializing TS compilation
 [[INFO] 04:43:05 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modifiedSSession runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8[[INFO] 01:34:18 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modifiedSSession runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8[INFO] 01:35:55 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modified
+Session runner starting: session=sess-8 Redis=127.0.0.1:6379
 Session already exists in Redis: sess-8
+[[INFO] 01:52:13 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modifiedSSession runner starting: session=sess-8 Redis=127.0.0.1:6379SSession already exists in Redis: sess-8[[INFO] 01:52:21 Restarting: /home/jdale/queue-sim/queue-sim/src/session/runner.ts has been modifiedSession runner starting: session=sess-8 Redis=127.0.0.1:6379
+Session already exists in Redis: sess-8
+MATCH_ENDED game=e4a461ca-bcf3-45ba-b450-0175438e4429 session=80c75a33-efc2-46ba-a60e-f3375f1274d8 players=100
+MATCH_ENDED game=2511e36b-f38b-4ce2-8425-d554b724b299 session=7ec3aaa1-0671-4a4a-93e4-a17e717486d1 players=100
+MMATCH_ENDED game=fbd368a9-9641-4751-9304-f76a0673668e session=29fdda71-5881-4f0d-8220-472dc243475f players=100

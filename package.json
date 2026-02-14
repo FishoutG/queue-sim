@@ -3,17 +3,23 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:all": "bash scripts/dev_all.sh",
+    "dev:all:short": "bash scripts/dev_all_short.sh",
+    "dev:demo": "bash scripts/dev_demo.sh",
     "dev:gateway": "ts-node-dev --respawn --transpile-only src/gateway/server.ts",
     "dev:matchmaker": "ts-node-dev --respawn --transpile-only src/matchmaker/worker.ts",
     "register:sessions": "ts-node-dev --transpile-only src/scripts/register_sessions.ts",
     "spawn:ready": "ts-node-dev --transpile-only src/scripts/spawn_ready_players.ts",
-    "dev:session": "ts-node-dev --respawn --transpile-only src/session/runner.ts"
+    "dev:session": "ts-node-dev --respawn --transpile-only src/session/runner.ts",
+    "dashboard": "ts-node-dev --respawn --transpile-only src/dashboard/server.ts"
   },
   "dependencies": {
+    "express": "^4.22.1",
     "ioredis": "^5.9.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.2",
     "@types/ws": "^8.18.1",
     "ts-node-dev": "^2.0.0",

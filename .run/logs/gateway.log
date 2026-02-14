@@ -19,3 +19,15 @@ Error: listen EADDRINUSE: address already in use :::3000
 [INFO] 04:43:04 Restarting: /home/jdale/queue-sim/queue-sim/tsconfig.json has been modified
 Gateway listening on ws://0.0.0.0:3000
 Redis at 127.0.0.1:6379
+[INFO] 01:33:50 Restarting: /home/jdale/queue-sim/queue-sim/src/gateway/server.ts has been modified
+Gateway listening on ws://0.0.0.0:3000
+Redis at 127.0.0.1:6379
+[INFO] 01:35:54 Restarting: /home/jdale/queue-sim/queue-sim/src/gateway/server.ts has been modified
+Gateway listening on ws://0.0.0.0:3000
+Redis at 127.0.0.1:6379
+[INFO] 01:38:03 Restarting: /home/jdale/queue-sim/queue-sim/src/gateway/server.ts has been modified
+Gateway listening on ws://0.0.0.0:3000
+Redis at 127.0.0.1:6379
+[INFO] 01:38:14 Restarting: /home/jdale/queue-sim/queue-sim/src/gateway/server.ts has been modified
+Gateway listening on ws://0.0.0.0:3000
+Redis at 127.0.0.1:6379
