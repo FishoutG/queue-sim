@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Queue-Sim Dashboard</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <header>
@@ -233,6 +234,47 @@
     <span>Queue-Sim Dashboard</span>
     <span id="last-update">Last update: -</span>
   </footer>
+
+  <!-- VM Metrics Dropdown Template (hidden, cloned when needed) -->
+  <template id="metrics-dropdown-template">
+    <tr class="metrics-dropdown-row">
+      <td colspan="6">
+        <div class="metrics-dropdown">
+          <div class="metrics-dropdown-header">
+            <span class="metrics-dropdown-title"></span>
+            <div class="metrics-dropdown-controls">
+              <select class="metrics-timeframe">
+                <option value="hour" selected>Hour</option>
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+              </select>
+              <span class="metrics-status">Live</span>
+            </div>
+          </div>
+          <div class="metrics-charts">
+            <div class="chart-container">
+              <h4>CPU</h4>
+              <canvas class="chart-cpu"></canvas>
+            </div>
+            <div class="chart-container">
+              <h4>Memory</h4>
+              <canvas class="chart-mem"></canvas>
+            </div>
+            <div class="chart-container">
+              <h4>Disk I/O</h4>
+              <canvas class="chart-disk"></canvas>
+            </div>
+            <div class="chart-container">
+              <h4>Network I/O</h4>
+              <canvas class="chart-net"></canvas>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </template>
 
   <script src="app.js"></script>
 </body>

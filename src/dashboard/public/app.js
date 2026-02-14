@@ -435,6 +435,10 @@ async function refreshInfra() {
 }
 
 function renderInfra(data) {
+  // Skip table re-render while metrics dropdown is open
+  // This prevents the dropdown from being destroyed during auto-refresh
+  if (currentDropdown) return;
+  
   const disabledEl = document.getElementById("infra-disabled");
   const contentEl = document.getElementById("infra-content");
   
@@ -447,12 +451,17 @@ function renderInfra(data) {
   disabledEl.style.display = "none";
   contentEl.style.display = "block";
   
+  // Sort data for stable display
+  const sortedNodes = [...data.nodes].sort((a, b) => (a.node || '').localeCompare(b.node || ''));
+  const sortedVMs = [...data.vms].sort((a, b) => (a.vmid || 0) - (b.vmid || 0));
+  const sortedContainers = [...data.containers].sort((a, b) => (a.vmid || 0) - (b.vmid || 0));
+  
   // Render nodes
   const nodesBody = document.getElementById("nodes-table-body");
-  if (data.nodes.length === 0) {
+  if (sortedNodes.length === 0) {
     nodesBody.innerHTML = '<tr><td colspan="5" class="empty">No nodes found</td></tr>';
   } else {
-    nodesBody.innerHTML = data.nodes.map(node => `
+    nodesBody.innerHTML = sortedNodes.map(node => `
       <tr>
         <td>${node.node}</td>
         <td><span class="badge badge-${node.status === 'online' ? 'running' : 'finished'}">${node.status}</span></td>
@@ -465,11 +474,11 @@ function renderInfra(data) {
   
   // Render VMs
   const vmsBody = document.getElementById("vms-table-body");
-  if (data.vms.length === 0) {
+  if (sortedVMs.length === 0) {
     vmsBody.innerHTML = '<tr><td colspan="6" class="empty">No VMs found</td></tr>';
   } else {
-    vmsBody.innerHTML = data.vms.map(vm => `
-      <tr>
+    vmsBody.innerHTML = sortedVMs.map(vm => `
+      <tr class="clickable" data-type="qemu" data-node="${vm.node}" data-vmid="${vm.vmid}" data-name="${vm.name || 'VM ' + vm.vmid}">
         <td>${vm.vmid}</td>
         <td>${vm.name || '-'}</td>
         <td>${vm.node}</td>
@@ -478,15 +487,29 @@ function renderInfra(data) {
         <td>${vm.mem && vm.maxmem ? formatBytes(vm.mem) + ' / ' + formatBytes(vm.maxmem) : '-'}</td>
       </tr>
     `).join('');
+    
+    // Add click handlers
+    vmsBody.querySelectorAll('tr.clickable').forEach(row => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMetricsDropdown(
+          row,
+          row.dataset.type,
+          row.dataset.node,
+          row.dataset.vmid,
+          row.dataset.name
+        );
+      });
+    });
   }
   
   // Render containers
   const containersBody = document.getElementById("containers-table-body");
-  if (data.containers.length === 0) {
+  if (sortedContainers.length === 0) {
     containersBody.innerHTML = '<tr><td colspan="6" class="empty">No containers found</td></tr>';
   } else {
-    containersBody.innerHTML = data.containers.map(ct => `
-      <tr>
+    containersBody.innerHTML = sortedContainers.map(ct => `
+      <tr class="clickable" data-type="lxc" data-node="${ct.node}" data-vmid="${ct.vmid}" data-name="${ct.name || 'CT ' + ct.vmid}">
         <td>${ct.vmid}</td>
         <td>${ct.name || '-'}</td>
         <td>${ct.node}</td>
@@ -495,6 +518,20 @@ function renderInfra(data) {
         <td>${ct.mem && ct.maxmem ? formatBytes(ct.mem) + ' / ' + formatBytes(ct.maxmem) : '-'}</td>
       </tr>
     `).join('');
+    
+    // Add click handlers
+    containersBody.querySelectorAll('tr.clickable').forEach(row => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMetricsDropdown(
+          row,
+          row.dataset.type,
+          row.dataset.node,
+          row.dataset.vmid,
+          row.dataset.name
+        );
+      });
+    });
   }
 }
 
@@ -513,6 +550,335 @@ function formatUptime(seconds) {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VM Metrics Dropdown & Charts
+// 
+// Inline expandable metrics panel that appears below VM/container rows.
+// Features:
+// - Click a VM/container row to expand metrics dropdown below it
+// - Click again to collapse
+// - Live polling every 500ms for real-time updates
+// - 4 charts: CPU, Memory, Disk I/O, Network I/O
+// - Timeframe selector: Hour, Day, Week, Month, Year
+// - Pauses table refresh while dropdown is open to preserve state
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Current dropdown state - tracks the open dropdown, its charts, and polling interval
+let currentDropdown = null; // { row, element, target, charts, pollInterval }
+
+/**
+ * Toggle metrics dropdown for a VM or container row
+ * @param {HTMLElement} clickedRow - The table row that was clicked
+ * @param {string} type - 'qemu' for VMs, 'lxc' for containers
+ * @param {string} node - Proxmox node name
+ * @param {string} vmid - VM/container ID
+ * @param {string} name - Display name
+ */
+function toggleMetricsDropdown(clickedRow, type, node, vmid, name) {
+  // If clicking the same row, close it (toggle behavior)
+  if (currentDropdown && currentDropdown.target.vmid === vmid && currentDropdown.target.node === node) {
+    closeMetricsDropdown();
+    return;
+  }
+  
+  // Close any existing dropdown before opening a new one
+  closeMetricsDropdown();
+  
+  // Clone the dropdown template from the HTML
+  const template = document.getElementById('metrics-dropdown-template');
+  if (!template) {
+    console.error('Metrics dropdown template not found');
+    return;
+  }
+  
+  const dropdownRow = template.content.cloneNode(true).querySelector('tr');
+  if (!dropdownRow) {
+    console.error('Could not clone dropdown row from template');
+    return;
+  }
+  
+  // Insert the dropdown row directly after the clicked row
+  clickedRow.classList.add('expanded');
+  clickedRow.after(dropdownRow);
+  
+  // Get reference to the actually inserted DOM element
+  const insertedRow = clickedRow.nextElementSibling;
+  if (!insertedRow) {
+    console.error('Failed to get inserted row');
+    return;
+  }
+  
+  // Set the dropdown title to show which VM/container
+  insertedRow.querySelector('.metrics-dropdown-title').textContent = `${name} Metrics`;
+  
+  // Store all dropdown state for later reference
+  currentDropdown = {
+    row: clickedRow,           // Original clicked row (to remove 'expanded' class later)
+    element: insertedRow,      // The dropdown row element
+    target: { type, node, vmid, name }, // VM/container info for API calls
+    charts: { cpu: null, mem: null, disk: null, net: null }, // Chart.js instances
+    pollInterval: null         // Interval ID for 500ms polling
+  };
+  
+  // Setup timeframe dropdown change handler
+  const timeframeSelect = insertedRow.querySelector('.metrics-timeframe');
+  timeframeSelect.addEventListener('change', () => loadDropdownMetrics());
+  
+  // Render placeholder charts immediately so user sees the UI
+  renderDropdownCharts([], 'hour');
+  
+  // Load actual metrics data
+  loadDropdownMetrics();
+  
+  // Start live polling - update charts every 500ms
+  currentDropdown.pollInterval = setInterval(() => loadDropdownMetrics(), 500);
+}
+
+/**
+ * Close the currently open metrics dropdown
+ * Stops polling, destroys charts, and removes the dropdown row
+ */
+function closeMetricsDropdown() {
+  if (!currentDropdown) return;
+  
+  // Stop the 500ms polling interval
+  if (currentDropdown.pollInterval) {
+    clearInterval(currentDropdown.pollInterval);
+  }
+  
+  // Destroy all Chart.js instances to free memory
+  Object.values(currentDropdown.charts).forEach(chart => chart?.destroy());
+  
+  // Remove 'expanded' highlight from the original row
+  currentDropdown.row.classList.remove('expanded');
+  
+  // Remove the dropdown row from the DOM
+  currentDropdown.element.remove();
+  
+  currentDropdown = null;
+}
+
+/**
+ * Fetch metrics data from the Proxmox API and render charts
+ * Called on initial load and every 500ms for live updates
+ */
+async function loadDropdownMetrics() {
+  if (!currentDropdown) return;
+  
+  const { type, node, vmid } = currentDropdown.target;
+  const timeframe = currentDropdown.element.querySelector('.metrics-timeframe').value;
+  
+  try {
+    // Fetch RRD (round-robin database) metrics from Proxmox via our API
+    const res = await fetch(`/api/infra/metrics/${type}/${node}/${vmid}?timeframe=${timeframe}`);
+    const data = await res.json();
+    
+    if (data.error) {
+      console.error('Metrics error:', data.error);
+      return;
+    }
+    
+    // Update the charts with new data
+    renderDropdownCharts(data.data, timeframe);
+  } catch (err) {
+    console.error('Failed to load metrics:', err);
+  }
+}
+
+/**
+ * Render the 4 metrics charts (CPU, Memory, Disk I/O, Network I/O)
+ * Uses Chart.js for visualization
+ * @param {Array} data - Array of RRD data points from Proxmox
+ * @param {string} timeframe - 'hour', 'day', 'week', 'month', or 'year'
+ */
+function renderDropdownCharts(data, timeframe) {
+  if (!currentDropdown) return;
+  
+  const dropdown = currentDropdown.element;
+  const charts = currentDropdown.charts;
+  
+  // Process data or create placeholder if empty
+  let validData = [];
+  let labels = [];
+  
+  if (data && data.length > 0) {
+    // Filter entries with timestamps and sort chronologically
+    validData = data.filter(d => d.time).sort((a, b) => a.time - b.time);
+    
+    // Format time labels based on timeframe
+    labels = validData.map(d => {
+      const date = new Date(d.time * 1000);
+      if (timeframe === 'hour') {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } else if (timeframe === 'day') {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } else {
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      }
+    });
+  }
+  
+  // If no data available, create placeholder with 60 zero-value points
+  // This ensures charts display a flat line instead of an empty box
+  if (validData.length === 0) {
+    const now = Date.now();
+    for (let i = 59; i >= 0; i--) {
+      validData.push({ time: (now - i * 60000) / 1000, cpu: 0, mem: 0 });
+    }
+    labels = validData.map(d => {
+      const date = new Date(d.time * 1000);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+  }
+  
+  // Shared Chart.js options for all charts
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false, // Disable animation for 500ms polling performance
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        display: false, // Hide x-axis labels for compact view
+        grid: { display: false }
+      },
+      y: {
+        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: { color: '#8b949e', font: { size: 9 }, maxTicksLimit: 3 },
+        beginAtZero: true
+      }
+    }
+  };
+  
+  // CPU Usage Chart (percentage 0-100%)
+  const cpuCanvas = dropdown.querySelector('.chart-cpu');
+  if (cpuCanvas) {
+    charts.cpu?.destroy(); // Destroy previous chart instance
+    charts.cpu = new Chart(cpuCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: validData.map(d => d.cpu !== undefined ? (d.cpu * 100) : 0),
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88, 166, 255, 0.2)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          ...chartOptions.scales,
+          y: { ...chartOptions.scales.y, max: 100, ticks: { ...chartOptions.scales.y.ticks, callback: v => v + '%' } }
+        }
+      }
+    });
+  }
+  
+  // Memory Usage Chart (displayed in GB)
+  const memCanvas = dropdown.querySelector('.chart-mem');
+  if (memCanvas) {
+    charts.mem?.destroy();
+    charts.mem = new Chart(memCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: validData.map(d => d.mem ? d.mem / (1024 * 1024 * 1024) : 0),
+          borderColor: '#3fb950',
+          backgroundColor: 'rgba(63, 185, 80, 0.2)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          ...chartOptions.scales,
+          y: { ...chartOptions.scales.y, ticks: { ...chartOptions.scales.y.ticks, callback: v => v.toFixed(1) + 'G' } }
+        }
+      }
+    });
+  }
+  
+  // Disk I/O Chart (Read in blue, Write in red - MB/s)
+  const diskCanvas = dropdown.querySelector('.chart-disk');
+  if (diskCanvas) {
+    charts.disk?.destroy();
+    charts.disk = new Chart(diskCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'R',
+            data: validData.map(d => d.diskread ? d.diskread / (1024 * 1024) : 0),
+            borderColor: '#58a6ff',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 1.5
+          },
+          {
+            label: 'W',
+            data: validData.map(d => d.diskwrite ? d.diskwrite / (1024 * 1024) : 0),
+            borderColor: '#f85149',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 1.5
+          }
+        ]
+      },
+      options: {
+        ...chartOptions,
+        plugins: { legend: { display: true, position: 'top', labels: { color: '#8b949e', boxWidth: 8, font: { size: 9 } } } }
+      }
+    });
+  }
+  
+  // Network I/O Chart (In in green, Out in purple - MB/s)
+  const netCanvas = dropdown.querySelector('.chart-net');
+  if (netCanvas) {
+    charts.net?.destroy();
+    charts.net = new Chart(netCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'In',
+            data: validData.map(d => d.netin ? d.netin / (1024 * 1024) : 0),
+            borderColor: '#3fb950',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 1.5
+          },
+          {
+            label: 'Out',
+            data: validData.map(d => d.netout ? d.netout / (1024 * 1024) : 0),
+            borderColor: '#a371f7',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 1.5
+          }
+        ]
+      },
+      options: {
+        ...chartOptions,
+        plugins: { legend: { display: true, position: 'top', labels: { color: '#8b949e', boxWidth: 8, font: { size: 9 } } } }
+      }
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

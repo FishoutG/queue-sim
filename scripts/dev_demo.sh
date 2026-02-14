@@ -39,9 +39,12 @@ mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "Demo log: $LOG_FILE"
 
-# Seed idle sessions for the matchmaker.
-echo "Registering idle sessions..."
-SESSIONS=40 ./node_modules/.bin/ts-node-dev --transpile-only src/scripts/register_sessions.ts
+# Start session auto-scaler (dynamically creates sessions based on demand)
+echo "Starting session auto-scaler..."
+MIN_SESSIONS=10 MAX_SESSIONS=200 PLAYERS_PER_GAME=100 \
+  ./node_modules/.bin/ts-node-dev --respawn --transpile-only src/scripts/session_autoscaler.ts &
+pids+=("$!")
+sleep 1  # Give autoscaler time to create initial sessions
 
 # Core services with short match durations.
 echo "Starting gateway on port 3001..."

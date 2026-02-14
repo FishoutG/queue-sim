@@ -13,7 +13,7 @@ import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import Redis from "ioredis";
 import path from "path";
-import { getProxmoxStats } from "./services/proxmox";
+import { getProxmoxStats, getVMMetrics } from "./services/proxmox";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -368,6 +368,28 @@ app.get("/api/infra", async (_req, res) => {
       vms: [],
       containers: [],
     });
+  }
+});
+
+// API: VM/Container Metrics (for graphs)
+app.get("/api/infra/metrics/:type/:node/:vmid", async (req, res) => {
+  try {
+    const { type, node, vmid } = req.params;
+    const timeframe = (req.query.timeframe as string) || "hour";
+    
+    if (type !== "qemu" && type !== "lxc") {
+      return res.status(400).json({ error: "Invalid type, must be 'qemu' or 'lxc'" });
+    }
+    
+    const metrics = await getVMMetrics(node, Number(vmid), type, timeframe);
+    if (!metrics) {
+      return res.status(404).json({ error: "Metrics not found" });
+    }
+    
+    res.json(metrics);
+  } catch (err) {
+    console.error("Error fetching VM metrics:", err);
+    res.status(500).json({ error: String(err) });
   }
 });
 

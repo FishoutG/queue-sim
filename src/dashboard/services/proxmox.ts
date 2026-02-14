@@ -69,6 +69,27 @@ export interface ProxmoxStats {
   lastUpdated: number;
 }
 
+export interface RRDDataPoint {
+  time: number;
+  cpu?: number;
+  mem?: number;
+  maxmem?: number;
+  disk?: number;
+  maxdisk?: number;
+  diskread?: number;
+  diskwrite?: number;
+  netin?: number;
+  netout?: number;
+}
+
+export interface VMMetrics {
+  vmid: number;
+  node: string;
+  name: string;
+  timeframe: string;
+  data: RRDDataPoint[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,6 +178,23 @@ class ProxmoxClient {
   }
 
   /**
+   * Get RRD data for a VM (historical metrics)
+   * timeframe: hour, day, week, month, year
+   */
+  async getVMRRDData(node: string, vmid: number, timeframe: string = "hour"): Promise<RRDDataPoint[]> {
+    const data = await this.request<RRDDataPoint[]>(`/nodes/${node}/qemu/${vmid}/rrddata?timeframe=${timeframe}`);
+    return data || [];
+  }
+
+  /**
+   * Get RRD data for a container (historical metrics)
+   */
+  async getContainerRRDData(node: string, vmid: number, timeframe: string = "hour"): Promise<RRDDataPoint[]> {
+    const data = await this.request<RRDDataPoint[]>(`/nodes/${node}/lxc/${vmid}/rrddata?timeframe=${timeframe}`);
+    return data || [];
+  }
+
+  /**
    * Get all stats for the cluster
    */
   async getAllStats(): Promise<ProxmoxStats> {
@@ -236,6 +274,31 @@ export async function getProxmoxStats(): Promise<ProxmoxStats> {
       containers: [],
       lastUpdated: Date.now(),
     };
+  }
+}
+
+/**
+ * Get VM metrics (RRD data) for graphs
+ */
+export async function getVMMetrics(node: string, vmid: number, type: "qemu" | "lxc" = "qemu", timeframe: string = "hour"): Promise<VMMetrics | null> {
+  const proxmox = getProxmoxClient();
+  if (!proxmox) return null;
+
+  try {
+    const data = type === "qemu" 
+      ? await proxmox.getVMRRDData(node, vmid, timeframe)
+      : await proxmox.getContainerRRDData(node, vmid, timeframe);
+    
+    return {
+      vmid,
+      node,
+      name: `${type === 'qemu' ? 'VM' : 'CT'} ${vmid}`,
+      timeframe,
+      data,
+    };
+  } catch (err) {
+    console.error(`Error fetching ${type} metrics:`, err);
+    return null;
   }
 }
 

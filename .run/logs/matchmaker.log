@@ -54,3 +54,32 @@ MATCH_FOUND game=afcac413-22da-4bae-9211-76a8c382f9bd session=e357c80c-2598-4a08
 MATCH_FOUND game=ca02df6f-1910-4b0f-b0f2-ca211c59e719 session=a462f952-c36f-4b3b-94ea-a3b82e8a20fa players=100 endAt=2026-02-14T03:09:32.337Z
 MATCH_FOUND game=1d353125-7708-416c-87c0-bc2a1b3290e7 session=312de720-83d0-436b-a178-c6aee3429768 players=100 endAt=2026-02-14T03:10:34.510Z
 MATCH_FOUND game=f7e6f278-231c-4794-aae5-d37db75dc707 session=2855e964-33b7-433b-ab1b-7fd449e2bff8 players=100 endAt=2026-02-14T03:07:55.192Z
+MATCH_FOUND game=82f813ce-583c-4f3c-846a-445edf6c6e56 session=7ee0fc56-d0e1-48d7-9ee5-4a058ec3c5d0 players=100 endAt=2026-02-14T03:25:25.857Z
+MATCH_FOUND game=501661be-705e-41c1-a3d2-ec38c321b4b5 session=374e6d45-e830-46ba-9049-89d9f7ea8410 players=100 endAt=2026-02-14T03:25:50.420Z
+MATCH_FOUND game=3c02c623-2515-45b3-9e25-e08f7126f42f session=c579d3e2-a4a0-4bf6-a117-ec882b65e2c6 players=100 endAt=2026-02-14T03:30:52.820Z
+MATCH_FOUND game=eab150af-7d21-4c1c-b5ca-c2eb99c0fac1 session=323aa23e-003e-4ab8-8f51-f523f15c5cf7 players=100 endAt=2026-02-14T03:32:41.877Z
+MATCH_FOUND game=c26f54fd-94cc-4b4f-ac41-e7d0d7102b10 session=3c71eb5f-3b8d-4dcd-b567-10e72726dcd2 players=100 endAt=2026-02-14T03:36:35.620Z
+MATCH_FOUND game=4ab3a9c5-2344-453e-86c6-fbb4aa5334ad session=3a0a0df0-d04b-4716-958d-5d0828d11512 players=100 endAt=2026-02-14T03:36:01.453Z
+MATCH_FOUND game=e87e24a9-d4de-498c-bf53-740aca53a6b7 session=abfb6e47-3825-437e-af02-a8aaa0f5b206 players=100 endAt=2026-02-14T03:43:19.011Z
+[INFO] 03:41:46 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Compilation error in /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts
+[ERROR] 03:41:47 ⨯ Unable to compile TypeScript:
+src/matchmaker/worker.ts(227,1): error TS1472: 'catch' or 'finally' expected.
+src/matchmaker/worker.ts(234,1): error TS1005: '}' expected.
+
+[INFO] 03:42:00 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 03:42:49 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
+[INFO] 03:45:35 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Compilation error in /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts
+[ERROR] 03:45:36 ⨯ Unable to compile TypeScript:
+src/matchmaker/worker.ts(122,5): error TS1128: Declaration or statement expected.
+src/matchmaker/worker.ts(123,3): error TS1128: Declaration or statement expected.
+src/matchmaker/worker.ts(132,1): error TS1128: Declaration or statement expected.
+
+[INFO] 03:45:47 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379
+MATCH_FOUND game=0348d2c8-e19b-4e92-8b98-6a46bd749690 session=bdda0cc0-8f5a-4992-9e60-3796690af312 players=100 endAt=2026-02-14T03:49:14.997Z
+[INFO] 03:49:11 Restarting: /home/jdale/queue-sim/queue-sim/src/matchmaker/worker.ts has been modified
+Matchmaker starting. Redis at 127.0.0.1:6379

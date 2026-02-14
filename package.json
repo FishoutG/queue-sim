@@ -11,6 +11,7 @@
     "register:sessions": "ts-node-dev --transpile-only src/scripts/register_sessions.ts",
     "spawn:ready": "ts-node-dev --transpile-only src/scripts/spawn_ready_players.ts",
     "dev:session": "ts-node-dev --respawn --transpile-only src/session/runner.ts",
+    "autoscaler": "ts-node-dev --respawn --transpile-only src/scripts/session_autoscaler.ts",
     "dashboard": "ts-node-dev --respawn --transpile-only src/dashboard/server.ts"
   },
   "dependencies": {

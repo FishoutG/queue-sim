@@ -540,3 +540,149 @@ footer {
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VM Metrics Dropdown
+   
+   Inline expandable metrics panel that appears below VM/container rows.
+   - Displays 4 charts in a row: CPU, Memory, Disk I/O, Network I/O
+   - Uses Chart.js for visualization
+   - Live updates every 500ms with pulsing "Live" indicator
+   - Timeframe selector for hour/day/week/month/year
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Remove padding from the dropdown row's cell */
+.metrics-dropdown-row td {
+  padding: 0 !important;
+  border: none !important;
+}
+
+/* Main dropdown container */
+.metrics-dropdown {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-blue);
+  border-radius: var(--radius-md);
+  margin: var(--spacing-sm);
+  overflow: visible;
+}
+
+.metrics-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.metrics-dropdown-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--accent-blue);
+}
+
+.metrics-dropdown-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.metrics-dropdown-controls select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+
+.metrics-status {
+  font-size: 0.75rem;
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metrics-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.metrics-charts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+}
+
+.metrics-dropdown .chart-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  min-height: 130px;
+}
+
+.metrics-dropdown .chart-container h4 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.metrics-dropdown .chart-container canvas {
+  width: 100% !important;
+  height: 100px !important;
+  display: block;
+}
+
+/* Keep general chart-container styles for compatibility */
+.chart-container {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.chart-container h3 {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Clickable table rows */
+.data-table tbody tr.clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.data-table tbody tr.clickable:hover {
+  background: var(--bg-tertiary);
+}
+
+.data-table tbody tr.clickable.expanded {
+  background: var(--bg-tertiary);
+}
+
+@media (max-width: 1200px) {
+  .metrics-charts {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .metrics-charts {
+    grid-template-columns: 1fr;
+  }
+}
