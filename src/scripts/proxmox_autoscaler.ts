@@ -1,0 +1,554 @@
+/**
+ * Proxmox Session Autoscaler
+ * 
+ * Automatically scales session runner containers on Proxmox based on player demand.
+ * 
+ * Features:
+ * - Monitors Redis queue length and active player count
+ * - Creates new session containers by cloning a template
+ * - Destroys idle session containers when demand drops
+ * - Respects min/max session limits
+ * - Cooldown periods to prevent thrashing
+ * 
+ * Environment Variables:
+ * - REDIS_URL: Redis connection string
+ * - PROXMOX_HOST: Proxmox API host (e.g., 10.10.10.10:8006)
+ * - PROXMOX_USER: API user (e.g., opnvdi@pam)
+ * - PROXMOX_TOKEN_ID: API token ID
+ * - PROXMOX_TOKEN_SECRET: API token secret
+ * - MIN_SESSIONS: Minimum session count (default: 10)
+ * - MAX_SESSIONS: Maximum session count (default: 300)
+ * - PLAYERS_PER_SESSION: Players each session handles (default: 100)
+ * - SESSION_TEMPLATE_VMID: VMID of session template (default: 9001)
+ * - SESSION_VMID_START: First VMID for sessions (default: 200)
+ * - SESSION_VMID_END: Last VMID for sessions (default: 499)
+ * - PROXMOX_NODE: Node to create containers on (default: pve)
+ */
+
+import Redis from 'ioredis';
+import https from 'https';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configuration
+// ─────────────────────────────────────────────────────────────────────────────
+
+const config = {
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379'
+  },
+  proxmox: {
+    host: process.env.PROXMOX_HOST || '10.10.10.10:8006',
+    user: process.env.PROXMOX_USER || 'opnvdi@pam',
+    tokenId: process.env.PROXMOX_TOKEN_ID || 'UI2',
+    tokenSecret: process.env.PROXMOX_TOKEN_SECRET || '',
+    node: process.env.PROXMOX_NODE || 'pve'
+  },
+  scaling: {
+    minSessions: parseInt(process.env.MIN_SESSIONS || '10'),
+    maxSessions: parseInt(process.env.MAX_SESSIONS || '300'),
+    playersPerSession: parseInt(process.env.PLAYERS_PER_SESSION || '100'),
+    templateVmid: parseInt(process.env.SESSION_TEMPLATE_VMID || '9001'),
+    vmidStart: parseInt(process.env.SESSION_VMID_START || '200'),
+    vmidEnd: parseInt(process.env.SESSION_VMID_END || '499'),
+    
+    // Scaling thresholds
+    scaleUpThreshold: 0.8,    // Scale up when 80% of slots are used
+    scaleDownThreshold: 0.3,  // Scale down when only 30% of slots are used
+    
+    // Cooldowns (ms)
+    scaleUpCooldown: 30000,   // 30 seconds between scale ups
+    scaleDownCooldown: 300000, // 5 minutes before scaling down
+    
+    // Batch sizes
+    scaleUpBatchSize: 5,      // Create 5 containers at a time
+    scaleDownBatchSize: 3     // Remove 3 containers at a time
+  },
+  pollInterval: 5000 // Check every 5 seconds
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+
+let redis: Redis;
+let lastScaleUp = 0;
+let lastScaleDown = 0;
+let lowUsageSince = 0;
+
+interface SessionContainer {
+  vmid: number;
+  name: string;
+  status: string;
+  sessionId?: string;
+  playerCount?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proxmox API
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function proxmoxApi(method: string, path: string, body?: any): Promise<any> {
+  const { host, user, tokenId, tokenSecret, node } = config.proxmox;
+  
+  return new Promise((resolve, reject) => {
+    const url = new URL(`https://${host}${path}`);
+    
+    const options: https.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port || 8006,
+      path: url.pathname + url.search,
+      method,
+      headers: {
+        'Authorization': `PVEAPIToken=${user}!${tokenId}=${tokenSecret}`,
+        'Content-Type': 'application/json'
+      },
+      rejectUnauthorized: false // Skip SSL verification for self-signed certs
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.data !== undefined) {
+            resolve(json.data);
+          } else {
+            resolve(json);
+          }
+        } catch (e) {
+          resolve(data);
+        }
+      });
+    });
+    
+    req.on('error', reject);
+    
+    if (body) {
+      req.write(JSON.stringify(body));
+    }
+    
+    req.end();
+  });
+}
+
+/**
+ * Get all session containers (VMIDs in the session range)
+ */
+async function getSessionContainers(): Promise<SessionContainer[]> {
+  const { node } = config.proxmox;
+  const { vmidStart, vmidEnd } = config.scaling;
+  
+  try {
+    const containers = await proxmoxApi('GET', `/api2/json/nodes/${node}/lxc`);
+    
+    return containers
+      .filter((ct: any) => ct.vmid >= vmidStart && ct.vmid <= vmidEnd)
+      .map((ct: any) => ({
+        vmid: ct.vmid,
+        name: ct.name,
+        status: ct.status
+      }));
+  } catch (err) {
+    console.error('Failed to get containers:', err);
+    return [];
+  }
+}
+
+/**
+ * Clone template to create new session container
+ */
+async function createSessionContainer(vmid: number): Promise<boolean> {
+  const { node } = config.proxmox;
+  const { templateVmid, vmidStart } = config.scaling;
+  
+  const sessionId = `session-${vmid}`;
+  const ip = calculateIpForVmid(vmid);
+  
+  console.log(`Creating container ${vmid} (${sessionId}) with IP ${ip}...`);
+  
+  try {
+    // Clone the template
+    await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${templateVmid}/clone`, {
+      newid: vmid,
+      hostname: sessionId,
+      full: 1,
+      target: node
+    });
+    
+    // Wait for clone to complete
+    await waitForTask(vmid, 'clone');
+    
+    // Configure network
+    await proxmoxApi('PUT', `/api2/json/nodes/${node}/lxc/${vmid}/config`, {
+      net0: `name=eth0,bridge=vmbr0,ip=${ip}/24,gw=10.10.10.1`
+    });
+    
+    // Start the container
+    await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/start`);
+    
+    // Register in Redis
+    await redis.hset(`session:${sessionId}`, {
+      state: 'IDLE',
+      vmid: vmid.toString(),
+      ip: ip,
+      startedAt: Date.now().toString()
+    });
+    
+    console.log(`✓ Container ${vmid} created and started`);
+    return true;
+  } catch (err) {
+    console.error(`Failed to create container ${vmid}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Stop and destroy a session container
+ */
+async function destroySessionContainer(vmid: number): Promise<boolean> {
+  const { node } = config.proxmox;
+  const sessionId = `session-${vmid}`;
+  
+  console.log(`Destroying container ${vmid} (${sessionId})...`);
+  
+  try {
+    // Stop if running
+    try {
+      await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/stop`);
+      await waitForTask(vmid, 'stop');
+    } catch (e) {
+      // Already stopped
+    }
+    
+    // Destroy
+    await proxmoxApi('DELETE', `/api2/json/nodes/${node}/lxc/${vmid}`);
+    
+    // Remove from Redis
+    await redis.del(`session:${sessionId}`);
+    
+    console.log(`✓ Container ${vmid} destroyed`);
+    return true;
+  } catch (err) {
+    console.error(`Failed to destroy container ${vmid}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Wait for a Proxmox task to complete
+ */
+async function waitForTask(vmid: number, operation: string, maxWait = 60000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < maxWait) {
+    await new Promise(r => setTimeout(r, 2000));
+    // In production, poll task status
+    // For now, just wait
+  }
+}
+
+/**
+ * Calculate IP address for a VMID
+ * VMIDs 200-254 -> 10.10.10.200-254
+ * VMIDs 255-499 -> 10.10.11.0-244
+ */
+function calculateIpForVmid(vmid: number): string {
+  if (vmid <= 254) {
+    return `10.10.10.${vmid}`;
+  } else {
+    return `10.10.11.${vmid - 255}`;
+  }
+}
+
+/**
+ * Find available VMIDs for new containers
+ */
+async function findAvailableVmids(count: number): Promise<number[]> {
+  const { vmidStart, vmidEnd } = config.scaling;
+  const existing = await getSessionContainers();
+  const usedVmids = new Set(existing.map(c => c.vmid));
+  
+  const available: number[] = [];
+  for (let vmid = vmidStart; vmid <= vmidEnd && available.length < count; vmid++) {
+    if (!usedVmids.has(vmid)) {
+      available.push(vmid);
+    }
+  }
+  
+  return available;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scaling Logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ScalingMetrics {
+  queueLength: number;
+  totalPlayers: number;
+  activeSessions: number;
+  idleSessions: number;
+  totalCapacity: number;
+  usedCapacity: number;
+  utilizationPercent: number;
+}
+
+async function getScalingMetrics(): Promise<ScalingMetrics> {
+  // Get queue length
+  const queueLength = await redis.llen('queue:ready');
+  
+  // Count players by state
+  const playerKeys = await redis.keys('player:*');
+  let totalPlayers = playerKeys.length;
+  
+  // Count sessions by state
+  const sessionKeys = await redis.keys('session:*');
+  let activeSessions = 0;
+  let idleSessions = 0;
+  
+  for (const key of sessionKeys) {
+    const state = await redis.hget(key, 'state');
+    if (state === 'BUSY') activeSessions++;
+    else idleSessions++;
+  }
+  
+  const totalSessions = activeSessions + idleSessions;
+  const totalCapacity = totalSessions * config.scaling.playersPerSession;
+  
+  // Used capacity = players in games + players in queue
+  const playersInGame = await countPlayersInGame();
+  const usedCapacity = playersInGame + queueLength;
+  
+  const utilizationPercent = totalCapacity > 0 
+    ? (usedCapacity / totalCapacity) * 100 
+    : 0;
+  
+  return {
+    queueLength,
+    totalPlayers,
+    activeSessions,
+    idleSessions,
+    totalCapacity,
+    usedCapacity,
+    utilizationPercent
+  };
+}
+
+async function countPlayersInGame(): Promise<number> {
+  const gameKeys = await redis.keys('game:*');
+  let count = 0;
+  
+  for (const key of gameKeys) {
+    const state = await redis.hget(key, 'state');
+    if (state === 'RUNNING') {
+      const playersJson = await redis.hget(key, 'players');
+      if (playersJson) {
+        try {
+          const players = JSON.parse(playersJson);
+          count += players.length;
+        } catch (e) {}
+      }
+    }
+  }
+  
+  return count;
+}
+
+async function scaleUp(needed: number): Promise<void> {
+  const now = Date.now();
+  
+  // Check cooldown
+  if (now - lastScaleUp < config.scaling.scaleUpCooldown) {
+    console.log('Scale up cooldown active, skipping...');
+    return;
+  }
+  
+  const containers = await getSessionContainers();
+  const currentCount = containers.length;
+  
+  // Don't exceed max
+  const maxToCreate = Math.min(
+    needed,
+    config.scaling.maxSessions - currentCount,
+    config.scaling.scaleUpBatchSize
+  );
+  
+  if (maxToCreate <= 0) {
+    console.log('At max capacity, cannot scale up');
+    return;
+  }
+  
+  const vmids = await findAvailableVmids(maxToCreate);
+  console.log(`\n🔼 SCALING UP: Creating ${vmids.length} new session containers`);
+  
+  for (const vmid of vmids) {
+    await createSessionContainer(vmid);
+  }
+  
+  lastScaleUp = now;
+  lowUsageSince = 0; // Reset low usage timer
+}
+
+async function scaleDown(excess: number): Promise<void> {
+  const now = Date.now();
+  
+  // Require sustained low usage before scaling down
+  if (lowUsageSince === 0) {
+    lowUsageSince = now;
+    console.log('Low usage detected, starting cooldown timer...');
+    return;
+  }
+  
+  if (now - lowUsageSince < config.scaling.scaleDownCooldown) {
+    const remaining = Math.round((config.scaling.scaleDownCooldown - (now - lowUsageSince)) / 1000);
+    console.log(`Scale down in ${remaining}s if usage stays low...`);
+    return;
+  }
+  
+  const containers = await getSessionContainers();
+  const currentCount = containers.length;
+  
+  // Don't go below min
+  const maxToRemove = Math.min(
+    excess,
+    currentCount - config.scaling.minSessions,
+    config.scaling.scaleDownBatchSize
+  );
+  
+  if (maxToRemove <= 0) {
+    console.log('At minimum capacity, cannot scale down');
+    return;
+  }
+  
+  // Find idle containers to remove
+  const idleContainers: SessionContainer[] = [];
+  for (const ct of containers) {
+    const sessionId = `session-${ct.vmid}`;
+    const state = await redis.hget(`session:${sessionId}`, 'state');
+    if (state === 'IDLE' || !state) {
+      idleContainers.push(ct);
+    }
+  }
+  
+  // Sort by VMID descending (remove highest first)
+  idleContainers.sort((a, b) => b.vmid - a.vmid);
+  
+  const toRemove = idleContainers.slice(0, maxToRemove);
+  console.log(`\n🔽 SCALING DOWN: Removing ${toRemove.length} idle session containers`);
+  
+  for (const ct of toRemove) {
+    await destroySessionContainer(ct.vmid);
+  }
+  
+  lastScaleDown = now;
+  lowUsageSince = 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function checkAndScale(): Promise<void> {
+  const metrics = await getScalingMetrics();
+  
+  console.log('\n' + '─'.repeat(60));
+  console.log(`📊 Autoscaler Metrics @ ${new Date().toLocaleTimeString()}`);
+  console.log('─'.repeat(60));
+  console.log(`Queue:        ${metrics.queueLength} players waiting`);
+  console.log(`Total Players:${metrics.totalPlayers}`);
+  console.log(`Sessions:     ${metrics.activeSessions} busy, ${metrics.idleSessions} idle`);
+  console.log(`Capacity:     ${metrics.usedCapacity}/${metrics.totalCapacity} (${metrics.utilizationPercent.toFixed(1)}%)`);
+  
+  const totalSessions = metrics.activeSessions + metrics.idleSessions;
+  const { scaleUpThreshold, scaleDownThreshold, playersPerSession, minSessions, maxSessions } = config.scaling;
+  
+  // Calculate needed sessions based on queue + buffer
+  const neededSessions = Math.ceil((metrics.usedCapacity * 1.2) / playersPerSession);
+  const clampedNeeded = Math.max(minSessions, Math.min(maxSessions, neededSessions));
+  
+  console.log(`Needed:       ${clampedNeeded} sessions (have ${totalSessions})`);
+  
+  if (metrics.utilizationPercent > scaleUpThreshold * 100) {
+    // High utilization - need more capacity
+    const deficit = clampedNeeded - totalSessions;
+    if (deficit > 0) {
+      console.log(`\n⚠️  High utilization (${metrics.utilizationPercent.toFixed(1)}%) - need ${deficit} more sessions`);
+      await scaleUp(deficit);
+    }
+  } else if (metrics.utilizationPercent < scaleDownThreshold * 100 && totalSessions > minSessions) {
+    // Low utilization - can reduce capacity
+    const excess = totalSessions - Math.max(minSessions, clampedNeeded);
+    if (excess > 0) {
+      console.log(`\n📉 Low utilization (${metrics.utilizationPercent.toFixed(1)}%) - ${excess} excess sessions`);
+      await scaleDown(excess);
+    }
+  } else {
+    lowUsageSince = 0; // Reset low usage timer
+    console.log('\n✓ Capacity is balanced');
+  }
+}
+
+async function ensureMinimumSessions(): Promise<void> {
+  const containers = await getSessionContainers();
+  const currentCount = containers.length;
+  const { minSessions } = config.scaling;
+  
+  if (currentCount < minSessions) {
+    const needed = minSessions - currentCount;
+    console.log(`\n🚀 Bootstrap: Creating ${needed} initial session containers...`);
+    const vmids = await findAvailableVmids(needed);
+    
+    for (const vmid of vmids) {
+      await createSessionContainer(vmid);
+    }
+  }
+}
+
+async function main(): Promise<void> {
+  console.log('═'.repeat(60));
+  console.log('   PROXMOX SESSION AUTOSCALER');
+  console.log('═'.repeat(60));
+  console.log('\nConfiguration:');
+  console.log(`  Min Sessions:    ${config.scaling.minSessions}`);
+  console.log(`  Max Sessions:    ${config.scaling.maxSessions}`);
+  console.log(`  Players/Session: ${config.scaling.playersPerSession}`);
+  console.log(`  Template VMID:   ${config.scaling.templateVmid}`);
+  console.log(`  Session VMIDs:   ${config.scaling.vmidStart}-${config.scaling.vmidEnd}`);
+  console.log(`  Proxmox Node:    ${config.proxmox.node}`);
+  console.log(`  Poll Interval:   ${config.pollInterval / 1000}s`);
+  console.log('');
+  
+  // Connect to Redis
+  redis = new Redis(config.redis.url);
+  
+  redis.on('connect', () => console.log('✓ Connected to Redis'));
+  redis.on('error', (err) => console.error('Redis error:', err));
+  
+  // Wait for connection
+  await new Promise<void>((resolve) => {
+    redis.once('ready', resolve);
+  });
+  
+  // Ensure minimum sessions exist
+  await ensureMinimumSessions();
+  
+  // Start scaling loop
+  console.log('\n🔄 Starting autoscaler loop...\n');
+  
+  setInterval(checkAndScale, config.pollInterval);
+  checkAndScale(); // Initial check
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n\nShutting down autoscaler...');
+  await redis.quit();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n\nShutting down autoscaler...');
+  await redis.quit();
+  process.exit(0);
+});
+
+main().catch(console.error);
