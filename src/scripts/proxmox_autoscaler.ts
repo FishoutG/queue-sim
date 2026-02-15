@@ -443,11 +443,10 @@ async function scaleDown(excess: number): Promise<void> {
   const containers = await getSessionContainers();
   const currentCount = containers.length;
   
-  // Don't go below min
+  // Remove all excess at once (down to minSessions)
   const maxToRemove = Math.min(
     excess,
-    currentCount - config.scaling.minSessions,
-    config.scaling.scaleDownBatchSize
+    currentCount - config.scaling.minSessions
   );
   
   if (maxToRemove <= 0) {
