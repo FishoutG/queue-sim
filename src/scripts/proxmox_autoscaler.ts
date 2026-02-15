@@ -575,6 +575,20 @@ async function checkAndScale(): Promise<void> {
   
   console.log(`Needed:       ${clampedNeeded} sessions (have ${totalSessions})`);
   
+  // CRITICAL: If queue has players waiting but no idle sessions to serve them, scale up immediately
+  if (metrics.queueLength > 0 && metrics.idleSessions === 0 && totalSessions < maxSessions) {
+    // Calculate how many sessions needed just to handle current queue
+    const sessionsForQueue = Math.ceil(metrics.queueLength / playersPerSession);
+    const additionalNeeded = Math.min(sessionsForQueue, maxSessions - totalSessions);
+    
+    if (additionalNeeded > 0) {
+      console.log(`\n🚨 Queue starvation: ${metrics.queueLength} players waiting, 0 idle sessions!`);
+      console.log(`   Need ${additionalNeeded} more sessions to handle queue`);
+      await scaleUp(additionalNeeded);
+      return;
+    }
+  }
+  
   if (metrics.utilizationPercent > scaleUpThreshold * 100) {
     // High utilization - need more capacity
     const deficit = clampedNeeded - totalSessions;
