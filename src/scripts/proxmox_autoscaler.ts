@@ -546,6 +546,46 @@ async function reconcileSessions(): Promise<void> {
   if (cleaned > 0) {
     console.log(`🧹 Cleaned ${cleaned} orphaned/duplicate Redis session entries`);
   }
+  
+  // CRITICAL: Sync sessions:idle set with actual session hashes
+  // Matchmaker only sees sessions in this set, not the hash state
+  const idleSetMembers = await redis.smembers('sessions:idle');
+  const idleSetIds = new Set(idleSetMembers);
+  
+  // Get current session states from hashes
+  const currentSessionKeys = await redis.keys('session:*');
+  const actualIdleSessions = new Set<string>();
+  
+  for (const key of currentSessionKeys) {
+    const state = await redis.hget(key, 'state');
+    if (state === 'IDLE') {
+      // Extract session ID from key (session:session-200 -> session-200, or session:200 -> 200)
+      const sessionId = key.replace('session:', '');
+      actualIdleSessions.add(sessionId);
+    }
+  }
+  
+  // Add IDLE sessions to set if missing
+  let addedToSet = 0;
+  for (const sessionId of actualIdleSessions) {
+    if (!idleSetIds.has(sessionId)) {
+      await redis.sadd('sessions:idle', sessionId);
+      addedToSet++;
+    }
+  }
+  
+  // Remove from set if session is not actually IDLE
+  let removedFromSet = 0;
+  for (const sessionId of idleSetIds) {
+    if (!actualIdleSessions.has(sessionId)) {
+      await redis.srem('sessions:idle', sessionId);
+      removedFromSet++;
+    }
+  }
+  
+  if (addedToSet > 0 || removedFromSet > 0) {
+    console.log(`🔄 Synced sessions:idle set: +${addedToSet} added, -${removedFromSet} removed`);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
