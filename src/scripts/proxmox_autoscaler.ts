@@ -485,6 +485,14 @@ async function scaleDown(excess: number): Promise<void> {
  */
 async function reconcileSessions(): Promise<void> {
   const containers = await getSessionContainers();
+  
+  // Safety check: if API returns no containers, don't delete Redis entries
+  // This prevents wiping all sessions on API failure
+  if (containers.length === 0) {
+    console.log('⚠️ Skipping reconciliation: no containers returned from Proxmox API');
+    return;
+  }
+  
   const existingVmids = new Set(containers.map(c => c.vmid));
   
   // Get all session keys from Redis (handles both formats)
