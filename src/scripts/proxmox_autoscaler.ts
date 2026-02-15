@@ -93,6 +93,11 @@ async function proxmoxApi(method: string, path: string, body?: any): Promise<any
   return new Promise((resolve, reject) => {
     const url = new URL(`https://${host}${path}`);
     
+    // Proxmox API requires form-urlencoded for POST/PUT
+    const bodyString = body ? Object.entries(body)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&') : '';
+    
     const options: https.RequestOptions = {
       hostname: url.hostname,
       port: url.port || 8006,
@@ -100,7 +105,8 @@ async function proxmoxApi(method: string, path: string, body?: any): Promise<any
       method,
       headers: {
         'Authorization': `PVEAPIToken=${user}!${tokenId}=${tokenSecret}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(bodyString)
       },
       rejectUnauthorized: false // Skip SSL verification for self-signed certs
     };
@@ -111,6 +117,10 @@ async function proxmoxApi(method: string, path: string, body?: any): Promise<any
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(json)}`));
+            return;
+          }
           if (json.data !== undefined) {
             resolve(json.data);
           } else {
@@ -124,8 +134,8 @@ async function proxmoxApi(method: string, path: string, body?: any): Promise<any
     
     req.on('error', reject);
     
-    if (body) {
-      req.write(JSON.stringify(body));
+    if (bodyString) {
+      req.write(bodyString);
     }
     
     req.end();
@@ -168,16 +178,15 @@ async function createSessionContainer(vmid: number): Promise<boolean> {
   console.log(`Creating container ${vmid} (${sessionId}) with IP ${ip}...`);
   
   try {
-    // Clone the template
-    await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${templateVmid}/clone`, {
+    // Clone the template (linked clone for speed on ZFS)
+    const upid = await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${templateVmid}/clone`, {
       newid: vmid,
       hostname: sessionId,
-      full: 1,
       target: node
     });
     
     // Wait for clone to complete
-    await waitForTask(vmid, 'clone');
+    await waitForTask(upid);
     
     // Configure network
     await proxmoxApi('PUT', `/api2/json/nodes/${node}/lxc/${vmid}/config`, {
@@ -185,7 +194,8 @@ async function createSessionContainer(vmid: number): Promise<boolean> {
     });
     
     // Start the container
-    await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/start`);
+    const startUpid = await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/start`);
+    await waitForTask(startUpid);
     
     // Register in Redis
     await redis.hset(`session:${sessionId}`, {
@@ -215,14 +225,15 @@ async function destroySessionContainer(vmid: number): Promise<boolean> {
   try {
     // Stop if running
     try {
-      await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/stop`);
-      await waitForTask(vmid, 'stop');
+      const stopUpid = await proxmoxApi('POST', `/api2/json/nodes/${node}/lxc/${vmid}/status/stop`);
+      await waitForTask(stopUpid);
     } catch (e) {
       // Already stopped
     }
     
     // Destroy
-    await proxmoxApi('DELETE', `/api2/json/nodes/${node}/lxc/${vmid}`);
+    const destroyUpid = await proxmoxApi('DELETE', `/api2/json/nodes/${node}/lxc/${vmid}`);
+    await waitForTask(destroyUpid);
     
     // Remove from Redis
     await redis.del(`session:${sessionId}`);
@@ -236,15 +247,33 @@ async function destroySessionContainer(vmid: number): Promise<boolean> {
 }
 
 /**
- * Wait for a Proxmox task to complete
+ * Wait for a Proxmox task to complete by polling its status
  */
-async function waitForTask(vmid: number, operation: string, maxWait = 60000): Promise<void> {
+async function waitForTask(upid: string, maxWait = 120000): Promise<void> {
+  if (!upid) return;
+  
+  const { node } = config.proxmox;
   const start = Date.now();
+  
   while (Date.now() - start < maxWait) {
-    await new Promise(r => setTimeout(r, 2000));
-    // In production, poll task status
-    // For now, just wait
+    await new Promise(r => setTimeout(r, 1000));
+    
+    try {
+      const status = await proxmoxApi('GET', `/api2/json/nodes/${node}/tasks/${encodeURIComponent(upid)}/status`);
+      
+      if (status.status === 'stopped') {
+        if (status.exitstatus === 'OK') {
+          return; // Success
+        } else {
+          throw new Error(`Task failed: ${status.exitstatus}`);
+        }
+      }
+    } catch (err) {
+      // Task might not be found yet, keep polling
+    }
   }
+  
+  throw new Error(`Task timed out after ${maxWait}ms`);
 }
 
 /**
@@ -337,16 +366,23 @@ async function countPlayersInGame(): Promise<number> {
   const gameKeys = await redis.keys('game:*');
   let count = 0;
   
-  for (const key of gameKeys) {
-    const state = await redis.hget(key, 'state');
-    if (state === 'RUNNING') {
-      const playersJson = await redis.hget(key, 'players');
-      if (playersJson) {
-        try {
-          const players = JSON.parse(playersJson);
-          count += players.length;
-        } catch (e) {}
+  // Filter to only game hashes (not game:*:players sets)
+  const gameHashes = gameKeys.filter(key => !key.includes(':players'));
+  
+  for (const key of gameHashes) {
+    try {
+      const state = await redis.hget(key, 'state');
+      if (state === 'RUNNING') {
+        const playersJson = await redis.hget(key, 'players');
+        if (playersJson) {
+          try {
+            const players = JSON.parse(playersJson);
+            count += players.length;
+          } catch (e) {}
+        }
       }
+    } catch (e) {
+      // Skip keys with wrong type
     }
   }
   
