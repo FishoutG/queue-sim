@@ -235,8 +235,9 @@ async function destroySessionContainer(vmid: number): Promise<boolean> {
     const destroyUpid = await proxmoxApi('DELETE', `/api2/json/nodes/${node}/lxc/${vmid}`);
     await waitForTask(destroyUpid);
     
-    // Remove from Redis
+    // Remove from Redis (both session hash and idle set)
     await redis.del(`session:${sessionId}`);
+    await redis.srem('sessions:idle', vmid.toString());
     
     console.log(`✓ Container ${vmid} destroyed`);
     return true;

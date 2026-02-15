@@ -134,15 +134,9 @@ async function processBusySessions() {
 async function main() {
   console.log(`Session runner starting: session=${SESSION_ID} Redis=${REDIS_HOST}:${REDIS_PORT}`);
 
-  // Ensure we exist and are discoverable.
-  // IMPORTANT: Only register if the session doesn't exist yet.
-  const existing = await redis.exists(`session:${SESSION_ID}`);
-  if (!existing) {
-    await registerIdle(SESSION_ID);
-    console.log(`Registered new session as IDLE: ${SESSION_ID}`);
-  } else {
-    console.log(`Session already exists in Redis: ${SESSION_ID}`);
-  }
+  // Always register as idle on startup - ensures we're in sessions:idle set
+  await registerIdle(SESSION_ID);
+  console.log(`Registered session as IDLE: ${SESSION_ID}`);
 
   while (true) {
     await processBusySessions();
