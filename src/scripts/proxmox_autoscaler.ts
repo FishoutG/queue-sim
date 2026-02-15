@@ -479,11 +479,43 @@ async function scaleDown(excess: number): Promise<void> {
   lowUsageSince = 0;
 }
 
+/**
+ * Reconcile Redis session entries with actual Proxmox containers
+ * Removes orphaned Redis entries that don't have corresponding containers
+ */
+async function reconcileSessions(): Promise<void> {
+  const containers = await getSessionContainers();
+  const existingVmids = new Set(containers.map(c => c.vmid));
+  
+  // Get all session keys from Redis
+  const sessionKeys = await redis.keys('session:session-*');
+  
+  let cleaned = 0;
+  for (const key of sessionKeys) {
+    // Extract VMID from key like "session:session-200"
+    const match = key.match(/session:session-(\d+)/);
+    if (match) {
+      const vmid = parseInt(match[1]);
+      if (!existingVmids.has(vmid)) {
+        await redis.del(key);
+        cleaned++;
+      }
+    }
+  }
+  
+  if (cleaned > 0) {
+    console.log(`🧹 Cleaned ${cleaned} orphaned Redis session entries`);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Loop
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function checkAndScale(): Promise<void> {
+  // First reconcile Redis with actual Proxmox state
+  await reconcileSessions();
+  
   const metrics = await getScalingMetrics();
   
   console.log('\n' + '─'.repeat(60));
