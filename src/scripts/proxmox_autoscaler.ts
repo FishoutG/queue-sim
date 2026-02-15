@@ -487,19 +487,28 @@ async function reconcileSessions(): Promise<void> {
   const containers = await getSessionContainers();
   const existingVmids = new Set(containers.map(c => c.vmid));
   
-  // Get all session keys from Redis
-  const sessionKeys = await redis.keys('session:session-*');
+  // Get all session keys from Redis (handles both formats)
+  const sessionKeys = await redis.keys('session:*');
   
   let cleaned = 0;
   for (const key of sessionKeys) {
-    // Extract VMID from key like "session:session-200"
-    const match = key.match(/session:session-(\d+)/);
-    if (match) {
-      const vmid = parseInt(match[1]);
-      if (!existingVmids.has(vmid)) {
-        await redis.del(key);
-        cleaned++;
-      }
+    // Extract VMID from either format:
+    // - "session:session-200" 
+    // - "session:200"
+    let vmid: number | null = null;
+    
+    const match1 = key.match(/^session:session-(\d+)$/);
+    const match2 = key.match(/^session:(\d+)$/);
+    
+    if (match1) {
+      vmid = parseInt(match1[1]);
+    } else if (match2) {
+      vmid = parseInt(match2[1]);
+    }
+    
+    if (vmid !== null && !existingVmids.has(vmid)) {
+      await redis.del(key);
+      cleaned++;
     }
   }
   
