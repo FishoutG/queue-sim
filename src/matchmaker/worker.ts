@@ -125,6 +125,9 @@ async function createMatch(sessionId: string, playerIds: string[]) {
   const now = Date.now();
   const durationMs = pickMatchDurationMs();
   const endAt = now + durationMs;
+  
+  // TTL: game duration + 10 minute buffer for cleanup
+  const ttlSeconds = Math.ceil((durationMs + 600000) / 1000);
 
   // Create game records + move players to IN_GAME.
   const pipe = redis.pipeline();
@@ -135,9 +138,11 @@ async function createMatch(sessionId: string, playerIds: string[]) {
     started_at: now.toString(),
     end_at: endAt.toString(),
   });
+  pipe.expire(`game:${gameId}`, ttlSeconds);
 
   for (const pid of playerIds) {
     pipe.sadd(`game:${gameId}:players`, pid);
+    pipe.expire(`game:${gameId}:players`, ttlSeconds);
     pipe.hset(`player:${pid}`, {
       state: "IN_GAME",
       game_id: gameId,
