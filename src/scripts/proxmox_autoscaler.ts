@@ -482,6 +482,7 @@ async function scaleDown(excess: number): Promise<void> {
 /**
  * Reconcile Redis session entries with actual Proxmox containers
  * Removes orphaned Redis entries that don't have corresponding containers
+ * Also removes duplicate entries (both session:200 and session:session-200)
  */
 async function reconcileSessions(): Promise<void> {
   const containers = await getSessionContainers();
@@ -490,11 +491,10 @@ async function reconcileSessions(): Promise<void> {
   // Get all session keys from Redis (handles both formats)
   const sessionKeys = await redis.keys('session:*');
   
-  let cleaned = 0;
+  // Group keys by VMID to detect duplicates
+  const vmidToKeys = new Map<number, string[]>();
+  
   for (const key of sessionKeys) {
-    // Extract VMID from either format:
-    // - "session:session-200" 
-    // - "session:200"
     let vmid: number | null = null;
     
     const match1 = key.match(/^session:session-(\d+)$/);
@@ -506,14 +506,37 @@ async function reconcileSessions(): Promise<void> {
       vmid = parseInt(match2[1]);
     }
     
-    if (vmid !== null && !existingVmids.has(vmid)) {
-      await redis.del(key);
-      cleaned++;
+    if (vmid !== null) {
+      if (!vmidToKeys.has(vmid)) {
+        vmidToKeys.set(vmid, []);
+      }
+      vmidToKeys.get(vmid)!.push(key);
+    }
+  }
+  
+  let cleaned = 0;
+  
+  for (const [vmid, keys] of vmidToKeys) {
+    if (!existingVmids.has(vmid)) {
+      // Container doesn't exist - delete all keys for this VMID
+      for (const key of keys) {
+        await redis.del(key);
+        cleaned++;
+      }
+    } else if (keys.length > 1) {
+      // Duplicate keys - keep session:session-XXX, delete session:XXX
+      const toKeep = keys.find(k => k.startsWith('session:session-')) || keys[0];
+      for (const key of keys) {
+        if (key !== toKeep) {
+          await redis.del(key);
+          cleaned++;
+        }
+      }
     }
   }
   
   if (cleaned > 0) {
-    console.log(`🧹 Cleaned ${cleaned} orphaned Redis session entries`);
+    console.log(`🧹 Cleaned ${cleaned} orphaned/duplicate Redis session entries`);
   }
 }
 
