@@ -65,17 +65,17 @@ const PROFILES: Record<LoadProfile, Partial<SimulatorConfig>> = {
 };
 
 function getConfig(): SimulatorConfig {
-  const profile = (process.env.LOAD_PROFILE || 'minimal') as LoadProfile;
-  const defaults = PROFILES[profile] || PROFILES.minimal;
+  const profile = (process.env.LOAD_PROFILE || 'battleroyale') as LoadProfile;
+  const defaults = PROFILES[profile] || PROFILES.battleroyale;
   
   return {
     profile,
-    tickRate: parseInt(process.env.TICK_RATE || '') || defaults.tickRate || 1,
-    worldSize: parseInt(process.env.WORLD_SIZE || '') || defaults.worldSize || 64,
-    physicsEnabled: process.env.PHYSICS_ENABLED !== 'false' && (defaults.physicsEnabled ?? false),
-    collisionEnabled: process.env.COLLISION_ENABLED !== 'false' && (defaults.collisionEnabled ?? false),
-    pathfindingEnabled: process.env.PATHFINDING_ENABLED !== 'false' && (defaults.pathfindingEnabled ?? false),
-    memoryMB: parseInt(process.env.MEMORY_MB || '') || defaults.memoryMB || 5
+    tickRate: parseInt(process.env.TICK_RATE || '') || defaults.tickRate || 60,
+    worldSize: parseInt(process.env.WORLD_SIZE || '') || defaults.worldSize || 2048,
+    physicsEnabled: process.env.PHYSICS_ENABLED !== 'false' && (defaults.physicsEnabled ?? true),
+    collisionEnabled: process.env.COLLISION_ENABLED !== 'false' && (defaults.collisionEnabled ?? true),
+    pathfindingEnabled: process.env.PATHFINDING_ENABLED !== 'false' && (defaults.pathfindingEnabled ?? true),
+    memoryMB: parseInt(process.env.MEMORY_MB || '') || defaults.memoryMB || 300
   };
 }
 
