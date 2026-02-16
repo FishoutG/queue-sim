@@ -1,12 +1,16 @@
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
 import { hostname } from "os";
+import { BattleRoyaleSimulator, createSimulator, getSimulatorConfig } from "./simulator.js";
 
 const REDIS_HOST = process.env.REDIS_HOST ?? "127.0.0.1";
 const REDIS_PORT = Number(process.env.REDIS_PORT ?? 6379);
 
 // Multi-game support: max concurrent games per session
 const MAX_SLOTS = Number(process.env.MAX_SLOTS ?? 5);
+
+// Simulation config
+const SIM_CONFIG = getSimulatorConfig();
 
 // Session ID priority: 1) SESSION_ID env, 2) hostname (e.g. session-200), 3) random UUID
 function getSessionId(): string {
@@ -33,8 +37,9 @@ const FINISH_LOCK_MS = 5_000;
 // Shared Redis client for session/game state.
 const redis = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
 
-// Track active games for this session
+// Track active games and their simulators
 const activeGames = new Set<string>();
+const simulators = new Map<string, BattleRoyaleSimulator>();
 
 // Simple async delay helper.
 function sleep(ms: number) {
@@ -80,6 +85,13 @@ async function registerSession() {
       const state = await redis.hget(`game:${gameId}`, 'state');
       if (state === 'RUNNING') {
         activeGames.add(gameId);
+        
+        // Restart simulator for recovered game
+        const playerIds = await redis.smembers(`game:${gameId}:players`);
+        const sim = createSimulator(gameId, playerIds);
+        simulators.set(gameId, sim);
+        sim.start();
+        console.log(`[RECOVERY] Restarted simulation for game ${gameId.slice(0, 8)} with ${playerIds.length} players`);
       }
     }
   }
@@ -91,6 +103,14 @@ async function registerSession() {
 // Finish a game and free up a slot
 async function finishGame(gameId: string) {
   const now = Date.now();
+
+  // Stop the simulator first
+  const sim = simulators.get(gameId);
+  if (sim) {
+    const stats = sim.stop();
+    console.log(`[SIM] Game ${gameId.slice(0, 8)} finished - ${stats.tickCount} ticks, avg ${stats.avgTickMs.toFixed(1)}ms`);
+    simulators.delete(gameId);
+  }
 
   // Pull players from game set
   const playerIds = await redis.smembers(`game:${gameId}:players`);
@@ -146,7 +166,14 @@ async function checkForNewGames() {
       const state = await redis.hget(`game:${gameId}`, 'state');
       if (state === 'RUNNING') {
         activeGames.add(gameId);
-        console.log(`NEW_GAME game=${gameId} session=${SESSION_ID} slots=${MAX_SLOTS - activeGames.size}/${MAX_SLOTS}`);
+        
+        // Get player IDs and start simulator
+        const playerIds = await redis.smembers(`game:${gameId}:players`);
+        const sim = createSimulator(gameId, playerIds);
+        simulators.set(gameId, sim);
+        sim.start();
+        
+        console.log(`NEW_GAME game=${gameId} session=${SESSION_ID} players=${playerIds.length} slots=${MAX_SLOTS - activeGames.size}/${MAX_SLOTS}`);
       }
     }
   }
@@ -161,6 +188,12 @@ async function processActiveGames() {
     
     // Game might have been deleted or finished by another process
     if (!game || Object.keys(game).length === 0 || game.state === 'FINISHED') {
+      // Stop simulator if it was running
+      const sim = simulators.get(gameId);
+      if (sim) {
+        sim.stop();
+        simulators.delete(gameId);
+      }
       activeGames.delete(gameId);
       await updateAvailability();
       continue;
@@ -186,6 +219,7 @@ async function processActiveGames() {
 
 async function main() {
   console.log(`Session runner starting: session=${SESSION_ID} maxSlots=${MAX_SLOTS} Redis=${REDIS_HOST}:${REDIS_PORT}`);
+  console.log(`Simulation profile: ${SIM_CONFIG.profile} (${SIM_CONFIG.tickRate}Hz, ${SIM_CONFIG.worldSize}x${SIM_CONFIG.worldSize}, ${SIM_CONFIG.memoryMB}MB/game)`);
 
   await registerSession();
 
