@@ -47,6 +47,7 @@ const config = {
     minSessions: parseInt(process.env.MIN_SESSIONS || '10'),
     maxSessions: parseInt(process.env.MAX_SESSIONS || '300'),
     playersPerSession: parseInt(process.env.PLAYERS_PER_SESSION || '100'),
+    slotsPerSession: parseInt(process.env.SLOTS_PER_SESSION || '5'), // Games per container
     templateVmid: parseInt(process.env.SESSION_TEMPLATE_VMID || '9001'),
     vmidStart: parseInt(process.env.SESSION_VMID_START || '200'),
     vmidEnd: parseInt(process.env.SESSION_VMID_END || '499'),
@@ -235,9 +236,10 @@ async function destroySessionContainer(vmid: number): Promise<boolean> {
     const destroyUpid = await proxmoxApi('DELETE', `/api2/json/nodes/${node}/lxc/${vmid}`);
     await waitForTask(destroyUpid);
     
-    // Remove from Redis (both session hash and idle set)
+    // Remove from Redis (session hash and availability sorted set)
     await redis.del(`session:${sessionId}`);
-    await redis.srem('sessions:idle', vmid.toString());
+    await redis.zrem('sessions:available', sessionId);
+    await redis.zrem('sessions:available', vmid.toString()); // Legacy format
     
     console.log(`✓ Container ${vmid} destroyed`);
     return true;
@@ -315,10 +317,12 @@ async function findAvailableVmids(count: number): Promise<number[]> {
 interface ScalingMetrics {
   queueLength: number;
   totalPlayers: number;
-  activeSessions: number;
-  idleSessions: number;
-  totalCapacity: number;
-  usedCapacity: number;
+  totalSessions: number;
+  totalSlots: number;
+  usedSlots: number;
+  availableSlots: number;
+  runningGames: number;
+  playersInGame: number;
   utilizationPercent: number;
 }
 
@@ -328,37 +332,43 @@ async function getScalingMetrics(): Promise<ScalingMetrics> {
   
   // Count players by state
   const playerKeys = await redis.keys('player:*');
-  let totalPlayers = playerKeys.length;
+  const totalPlayers = playerKeys.length;
   
-  // Count sessions by state
+  // Count sessions and their slots
   const sessionKeys = await redis.keys('session:*');
-  let activeSessions = 0;
-  let idleSessions = 0;
+  let totalSessions = 0;
+  let totalSlots = 0;
+  let usedSlots = 0;
   
   for (const key of sessionKeys) {
-    const state = await redis.hget(key, 'state');
-    if (state === 'BUSY') activeSessions++;
-    else idleSessions++;
+    const sessionData = await redis.hgetall(key);
+    const maxSlots = parseInt(sessionData.max_slots || config.scaling.slotsPerSession.toString());
+    const activeGames = parseInt(sessionData.active_games || '0');
+    
+    totalSessions++;
+    totalSlots += maxSlots;
+    usedSlots += activeGames;
   }
   
-  const totalSessions = activeSessions + idleSessions;
-  const totalCapacity = totalSessions * config.scaling.playersPerSession;
+  const availableSlots = totalSlots - usedSlots;
   
-  // Used capacity = players in games + players in queue
+  // Count running games and players
   const playersInGame = await countPlayersInGame();
-  const usedCapacity = playersInGame + queueLength;
+  const runningGames = usedSlots; // Each used slot = 1 running game
   
-  const utilizationPercent = totalCapacity > 0 
-    ? (usedCapacity / totalCapacity) * 100 
+  const utilizationPercent = totalSlots > 0 
+    ? (usedSlots / totalSlots) * 100 
     : 0;
   
   return {
     queueLength,
     totalPlayers,
-    activeSessions,
-    idleSessions,
-    totalCapacity,
-    usedCapacity,
+    totalSessions,
+    totalSlots,
+    usedSlots,
+    availableSlots,
+    runningGames,
+    playersInGame,
     utilizationPercent
   };
 }
@@ -544,44 +554,60 @@ async function reconcileSessions(): Promise<void> {
     console.log(`🧹 Cleaned ${cleaned} orphaned/duplicate Redis session entries`);
   }
   
-  // CRITICAL: Sync sessions:idle set with actual session hashes
-  // Matchmaker only sees sessions in this set, not the hash state
-  const idleSetMembers = await redis.smembers('sessions:idle');
-  const idleSetIds = new Set(idleSetMembers);
+  // Sync sessions:available sorted set with actual session hashes
+  // Matchmaker uses this sorted set to find sessions with available slots
+  const availableMembers = await redis.zrange('sessions:available', 0, -1, 'WITHSCORES');
+  const currentAvailable = new Map<string, number>();
+  for (let i = 0; i < availableMembers.length; i += 2) {
+    currentAvailable.set(availableMembers[i], parseInt(availableMembers[i + 1]));
+  }
   
-  // Get current session states from hashes
+  // Get current session slots from hashes
   const currentSessionKeys = await redis.keys('session:*');
-  const actualIdleSessions = new Set<string>();
+  const actualAvailability = new Map<string, number>();
   
   for (const key of currentSessionKeys) {
-    const state = await redis.hget(key, 'state');
-    if (state === 'IDLE') {
-      // Extract session ID from key (session:session-200 -> session-200, or session:200 -> 200)
-      const sessionId = key.replace('session:', '');
-      actualIdleSessions.add(sessionId);
+    const sessionData = await redis.hgetall(key);
+    const maxSlots = parseInt(sessionData.max_slots || config.scaling.slotsPerSession.toString());
+    const activeGames = parseInt(sessionData.active_games || '0');
+    const availableSlots = maxSlots - activeGames;
+    
+    // Extract session ID from key
+    const sessionId = key.replace('session:', '');
+    
+    if (availableSlots > 0) {
+      actualAvailability.set(sessionId, availableSlots);
     }
   }
   
-  // Add IDLE sessions to set if missing
+  // Add/update sessions in sorted set
   let addedToSet = 0;
-  for (const sessionId of actualIdleSessions) {
-    if (!idleSetIds.has(sessionId)) {
-      await redis.sadd('sessions:idle', sessionId);
+  let updatedInSet = 0;
+  for (const [sessionId, slots] of actualAvailability) {
+    const currentScore = currentAvailable.get(sessionId);
+    if (currentScore === undefined) {
+      await redis.zadd('sessions:available', slots, sessionId);
       addedToSet++;
+    } else if (currentScore !== slots) {
+      await redis.zadd('sessions:available', slots, sessionId);
+      updatedInSet++;
     }
   }
   
-  // Remove from set if session is not actually IDLE
+  // Remove sessions that shouldn't be in available set
   let removedFromSet = 0;
-  for (const sessionId of idleSetIds) {
-    if (!actualIdleSessions.has(sessionId)) {
-      await redis.srem('sessions:idle', sessionId);
+  for (const sessionId of currentAvailable.keys()) {
+    if (!actualAvailability.has(sessionId)) {
+      await redis.zrem('sessions:available', sessionId);
       removedFromSet++;
     }
   }
   
-  if (addedToSet > 0 || removedFromSet > 0) {
-    console.log(`🔄 Synced sessions:idle set: +${addedToSet} added, -${removedFromSet} removed`);
+  // Also clean up old sessions:idle set (legacy)
+  await redis.del('sessions:idle');
+  
+  if (addedToSet > 0 || updatedInSet > 0 || removedFromSet > 0) {
+    console.log(`🔄 Synced sessions:available: +${addedToSet} added, ~${updatedInSet} updated, -${removedFromSet} removed`);
   }
 }
 
@@ -600,27 +626,31 @@ async function checkAndScale(): Promise<void> {
   console.log('─'.repeat(60));
   console.log(`Queue:        ${metrics.queueLength} players waiting`);
   console.log(`Total Players:${metrics.totalPlayers}`);
-  console.log(`Sessions:     ${metrics.activeSessions} busy, ${metrics.idleSessions} idle`);
-  console.log(`Capacity:     ${metrics.usedCapacity}/${metrics.totalCapacity} (${metrics.utilizationPercent.toFixed(1)}%)`);
+  console.log(`Players In Game: ${metrics.playersInGame}`);
+  console.log(`Sessions:     ${metrics.totalSessions} (${metrics.runningGames} games running)`);
+  console.log(`Slots:        ${metrics.usedSlots}/${metrics.totalSlots} used (${metrics.utilizationPercent.toFixed(1)}%)`);
+  console.log(`Available:    ${metrics.availableSlots} slots`);
   
-  const totalSessions = metrics.activeSessions + metrics.idleSessions;
-  const { scaleUpThreshold, scaleDownThreshold, playersPerSession, minSessions, maxSessions } = config.scaling;
+  const { scaleUpThreshold, scaleDownThreshold, slotsPerSession, playersPerSession, minSessions, maxSessions } = config.scaling;
   
-  // Calculate needed sessions based on queue + buffer
-  const neededSessions = Math.ceil((metrics.usedCapacity * 1.2) / playersPerSession);
-  const clampedNeeded = Math.max(minSessions, Math.min(maxSessions, neededSessions));
+  // Calculate needed sessions based on (players in game + queue) / players per session / slots per session
+  const totalDemand = metrics.playersInGame + metrics.queueLength;
+  const gamesNeeded = Math.ceil(totalDemand / playersPerSession);
+  const sessionsNeeded = Math.ceil(gamesNeeded / slotsPerSession);
+  const clampedNeeded = Math.max(minSessions, Math.min(maxSessions, sessionsNeeded));
   
-  console.log(`Needed:       ${clampedNeeded} sessions (have ${totalSessions})`);
+  console.log(`Needed:       ${clampedNeeded} sessions (have ${metrics.totalSessions})`);
   
-  // CRITICAL: If queue has players waiting but no idle sessions to serve them, scale up immediately
-  if (metrics.queueLength > 0 && metrics.idleSessions === 0 && totalSessions < maxSessions) {
-    // Calculate how many sessions needed just to handle current queue
-    const sessionsForQueue = Math.ceil(metrics.queueLength / playersPerSession);
-    const additionalNeeded = Math.min(sessionsForQueue, maxSessions - totalSessions);
+  // CRITICAL: If queue has players waiting but no available slots, scale up immediately
+  if (metrics.queueLength >= playersPerSession && metrics.availableSlots === 0 && metrics.totalSessions < maxSessions) {
+    // Calculate how many sessions needed to handle current queue
+    const gamesForQueue = Math.ceil(metrics.queueLength / playersPerSession);
+    const sessionsForQueue = Math.ceil(gamesForQueue / slotsPerSession);
+    const additionalNeeded = Math.min(sessionsForQueue, maxSessions - metrics.totalSessions);
     
     if (additionalNeeded > 0) {
-      console.log(`\n🚨 Queue starvation: ${metrics.queueLength} players waiting, 0 idle sessions!`);
-      console.log(`   Need ${additionalNeeded} more sessions to handle queue`);
+      console.log(`\n🚨 Slot starvation: ${metrics.queueLength} players waiting, 0 slots available!`);
+      console.log(`   Need ${additionalNeeded} more sessions (${additionalNeeded * slotsPerSession} slots)`);
       await scaleUp(additionalNeeded);
       return;
     }
@@ -628,14 +658,14 @@ async function checkAndScale(): Promise<void> {
   
   if (metrics.utilizationPercent > scaleUpThreshold * 100) {
     // High utilization - need more capacity
-    const deficit = clampedNeeded - totalSessions;
+    const deficit = clampedNeeded - metrics.totalSessions;
     if (deficit > 0) {
       console.log(`\n⚠️  High utilization (${metrics.utilizationPercent.toFixed(1)}%) - need ${deficit} more sessions`);
       await scaleUp(deficit);
     }
-  } else if (metrics.utilizationPercent < scaleDownThreshold * 100 && totalSessions > minSessions) {
+  } else if (metrics.utilizationPercent < scaleDownThreshold * 100 && metrics.totalSessions > minSessions) {
     // Low utilization - can reduce capacity
-    const excess = totalSessions - Math.max(minSessions, clampedNeeded);
+    const excess = metrics.totalSessions - Math.max(minSessions, clampedNeeded);
     if (excess > 0) {
       console.log(`\n📉 Low utilization (${metrics.utilizationPercent.toFixed(1)}%) - ${excess} excess sessions`);
       await scaleDown(excess);
@@ -664,12 +694,14 @@ async function ensureMinimumSessions(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log('═'.repeat(60));
-  console.log('   PROXMOX SESSION AUTOSCALER');
+  console.log('   PROXMOX SESSION AUTOSCALER (Multi-Game)');
   console.log('═'.repeat(60));
   console.log('\nConfiguration:');
   console.log(`  Min Sessions:    ${config.scaling.minSessions}`);
   console.log(`  Max Sessions:    ${config.scaling.maxSessions}`);
-  console.log(`  Players/Session: ${config.scaling.playersPerSession}`);
+  console.log(`  Slots/Session:   ${config.scaling.slotsPerSession} games`);
+  console.log(`  Players/Game:    ${config.scaling.playersPerSession}`);
+  console.log(`  Max Capacity:    ${config.scaling.maxSessions * config.scaling.slotsPerSession} games (${config.scaling.maxSessions * config.scaling.slotsPerSession * config.scaling.playersPerSession} players)`);
   console.log(`  Template VMID:   ${config.scaling.templateVmid}`);
   console.log(`  Session VMIDs:   ${config.scaling.vmidStart}-${config.scaling.vmidEnd}`);
   console.log(`  Proxmox Node:    ${config.proxmox.node}`);

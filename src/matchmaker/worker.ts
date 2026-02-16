@@ -39,27 +39,31 @@ function pickMatchDurationMs(): number {
   return Math.round(clamp(seconds, minSec, maxSec) * 1000);
 }
 
-async function reserveIdleSession(): Promise<string | null> {
-  // Take one idle session ID (1 session = 1 match).
-  const sessionId = await redis.spop("sessions:idle");
-  if (!sessionId) return null;
-
-  await redis.hset(`session:${sessionId}`, {
-    state: "RESERVED",
-    updated_at: Date.now().toString(),
-  });
-
+async function reserveSessionSlot(): Promise<string | null> {
+  // Get session with highest available slots (ZPOPMAX returns [member, score])
+  const result = await redis.zpopmax("sessions:available");
+  if (!result || result.length === 0) return null;
+  
+  const sessionId = result[0];
+  const availableSlots = parseInt(result[1]) - 1; // We're taking one slot
+  
+  // Re-add to available pool if still has slots
+  if (availableSlots > 0) {
+    await redis.zadd("sessions:available", availableSlots, sessionId);
+  }
+  
   return sessionId;
 }
 
-async function releaseSessionBackToIdle(sessionId: string) {
-  // Return the session to the idle pool after a failed match attempt.
-  await redis.hset(`session:${sessionId}`, {
-    state: "IDLE",
-    game_id: "",
-    updated_at: Date.now().toString(),
-  });
-  await redis.sadd("sessions:idle", sessionId);
+async function releaseSessionSlot(sessionId: string) {
+  // Return a slot to the session after a failed match attempt
+  // Get current availability and increment
+  const currentSlots = await redis.zscore("sessions:available", sessionId);
+  const maxSlots = await redis.hget(`session:${sessionId}`, 'max_slots');
+  const max = parseInt(maxSlots || '5');
+  
+  const newSlots = Math.min((parseInt(currentSlots || '0') || 0) + 1, max);
+  await redis.zadd("sessions:available", newSlots, sessionId);
 }
 
 async function pickReadyPlayers(): Promise<string[]> {
@@ -129,6 +133,11 @@ async function createMatch(sessionId: string, playerIds: string[]) {
   // TTL: game duration + 10 minute buffer for cleanup
   const ttlSeconds = Math.ceil((durationMs + 600000) / 1000);
 
+  // Get current game_ids for this session
+  const currentGameIds = await redis.hget(`session:${sessionId}`, 'game_ids') || '';
+  const gameIdsList = currentGameIds ? currentGameIds.split(',').filter(id => id) : [];
+  gameIdsList.push(gameId);
+
   // Create game records + move players to IN_GAME.
   const pipe = redis.pipeline();
 
@@ -151,10 +160,10 @@ async function createMatch(sessionId: string, playerIds: string[]) {
     });
   }
 
-  // Mark session busy (1 session = 1 match).
+  // Update session with new game (multi-game support)
   pipe.hset(`session:${sessionId}`, {
-    state: "BUSY",
-    game_id: gameId,
+    game_ids: gameIdsList.join(','),
+    active_games: gameIdsList.length.toString(),
     updated_at: now.toString(),
   });
 
@@ -167,7 +176,7 @@ async function createMatch(sessionId: string, playerIds: string[]) {
   );
 
   console.log(
-    `MATCH_FOUND game=${gameId} session=${sessionId} players=${playerIds.length} endAt=${new Date(
+    `MATCH_FOUND game=${gameId} session=${sessionId} players=${playerIds.length} games=${gameIdsList.length} endAt=${new Date(
       endAt
     ).toISOString()}`
   );
@@ -203,8 +212,15 @@ async function main() {
         continue;
       }
 
-      const idleSessions = await redis.scard("sessions:idle");
-      const targetMatches = Math.min(Math.floor(readyLen / BATCH_SIZE), idleSessions);
+      // Count total available slots across all sessions
+      // ZRANGEBYSCORE returns sessions with score >= 1 (at least 1 slot available)
+      const availableSessions = await redis.zrangebyscore("sessions:available", 1, "+inf", "WITHSCORES");
+      let totalSlots = 0;
+      for (let i = 1; i < availableSessions.length; i += 2) {
+        totalSlots += parseInt(availableSessions[i]);
+      }
+      
+      const targetMatches = Math.min(Math.floor(readyLen / BATCH_SIZE), totalSlots);
 
       if (targetMatches <= 0) {
         await sleep(SLEEP_MS_NO_SESSION);
@@ -214,14 +230,14 @@ async function main() {
       let createdAny = false;
 
       for (let i = 0; i < targetMatches; i++) {
-        const sessionId = await reserveIdleSession();
+        const sessionId = await reserveSessionSlot();
         if (!sessionId) break;
 
         try {
           const players = await pickReadyPlayers();
           if (players.length !== BATCH_SIZE) {
             // Not enough valid READY players after cleanup.
-            await releaseSessionBackToIdle(sessionId);
+            await releaseSessionSlot(sessionId);
             break;
           }
 
@@ -229,8 +245,8 @@ async function main() {
           createdAny = true;
         } catch (e) {
           console.error("Matchmaker error:", e);
-          // Avoid leaking reserved sessions.
-          await releaseSessionBackToIdle(sessionId);
+          // Avoid leaking reserved slots.
+          await releaseSessionSlot(sessionId);
           await sleep(250);
           break;
         }
