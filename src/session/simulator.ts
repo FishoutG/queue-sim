@@ -65,8 +65,8 @@ const PROFILES: Record<LoadProfile, Partial<SimulatorConfig>> = {
 };
 
 function getConfig(): SimulatorConfig {
-  const profile = (process.env.LOAD_PROFILE || 'battleroyale') as LoadProfile;
-  const defaults = PROFILES[profile] || PROFILES.battleroyale;
+  const profile = (process.env.LOAD_PROFILE || 'light') as LoadProfile;
+  const defaults = PROFILES[profile] || PROFILES.light;
   
   return {
     profile,
