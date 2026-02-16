@@ -374,13 +374,10 @@ async function countPlayersInGame(): Promise<number> {
     try {
       const state = await redis.hget(key, 'state');
       if (state === 'RUNNING') {
-        const playersJson = await redis.hget(key, 'players');
-        if (playersJson) {
-          try {
-            const players = JSON.parse(playersJson);
-            count += players.length;
-          } catch (e) {}
-        }
+        // Players are stored in a separate SET: game:{gameId}:players
+        const gameId = key.replace('game:', '');
+        const playerCount = await redis.scard(`game:${gameId}:players`);
+        count += playerCount;
       }
     } catch (e) {
       // Skip keys with wrong type
