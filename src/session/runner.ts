@@ -1,11 +1,27 @@
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
+import { hostname } from "os";
 
 const REDIS_HOST = process.env.REDIS_HOST ?? "127.0.0.1";
 const REDIS_PORT = Number(process.env.REDIS_PORT ?? 6379);
 
-// If SESSION_ID is not provided, runner generates one for self-registration.
-const SESSION_ID = process.env.SESSION_ID?.trim() || randomUUID();
+// Session ID priority: 1) SESSION_ID env, 2) hostname (e.g. session-200), 3) random UUID
+function getSessionId(): string {
+  if (process.env.SESSION_ID?.trim()) {
+    return process.env.SESSION_ID.trim();
+  }
+  
+  const host = hostname();
+  // If hostname looks like a session ID (e.g. session-200), use it
+  if (host.startsWith('session-')) {
+    return host;
+  }
+  
+  // Fallback to random UUID
+  return randomUUID();
+}
+
+const SESSION_ID = getSessionId();
 
 // Poll intervals
 const IDLE_POLL_MS = 250;
